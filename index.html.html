@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>原料追加アプリ</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    input, button {
+      font-size: 18px;
+      padding: 10px;
+      margin: 10px 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>原料を追加する</h1>
+
+  <input type="text" id="name" placeholder="名前�E�忁E��！E />
+  <input type="text" id="type" placeholder="種類（例：葉タバコ�E�E />
+  <input type="text" id="description" placeholder="説昁E />
+  <button onclick="addIngredient()">追加する</button>
+
+  <script type="module">
+    // SupabaseのJavaScriptライブラリを読み込みまぁE
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+    // ↓ここをあなた�ESupabaseの惁E��に書き換えてくださいↁE
+    const supabaseUrl = https://jhuoxopawshjokjyhbou.supabase.co
+    const supabaseKey = 'あなた�E公開用APIキー'
+    const supabase = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpodW94b3Bhd3Noam9ranloYm91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgxNzMyNTksImV4cCI6MjA2Mzc0OTI1OX0.tBzgKqRe-4-wx3Jhrlzl_oL5PnB1xRbcaD_0rDWr_kA
+
+    // ボタンを押したら呼ばれる関数
+    async function addIngredient() {
+      const name = document.getElementById('name').value.trim()
+      const type = document.getElementById('type').value.trim()
+      const description = document.getElementById('description').value.trim()
+
+      if (!name) {
+        alert('名前は忁E��です！E)
+        return
+      }
+
+      // SupabaseにチE�Eタを送る
+      const { data, error } = await supabase
+        .from('原料')
+        .insert([{ 名前: name, 種顁E type, 説昁E description }])
+
+      if (error) {
+        alert('エラーが起きました: ' + error.message)
+      } else {
+        alert('追加しました�E�E)
+        // 入力欁E��空にする
+        document.getElementById('name').value = ''
+        document.getElementById('type').value = ''
+        document.getElementById('description').value = ''
+      }
+    }
+  </script>
+</body>
+</html>
