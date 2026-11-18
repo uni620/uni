@@ -6,7 +6,7 @@ import pytest
 
 from keirin import pipeline
 from keirin.combos import combo_probs
-from keirin.config import Config, load_config
+from keirin.config import ROOT, Config, load_config
 from keirin.db import DB
 from keirin.features import build_features
 from keirin.race_grade import kaku, race_level
@@ -17,7 +17,7 @@ from keirin.strategy import BASELINE, decide_baseline, decide_bets
 
 @pytest.fixture
 def cfg(tmp_path):
-    raw = dict(load_config().raw)
+    raw = dict(load_config(ROOT / "config.example.toml").raw)
     raw["paths"] = {"db": "t.sqlite", "excel": "r.xlsx", "model": "m.json", "log": "l.log"}
     return Config(raw=raw, base=tmp_path)
 
