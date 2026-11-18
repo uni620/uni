@@ -13,7 +13,6 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .db import DB
-from .model import WinProbModel
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +80,7 @@ def cumulative_pivot(bets: pd.DataFrame, mode: str) -> pd.DataFrame:
     b = bets[bets["mode"] == mode]
     if b.empty:
         return pd.DataFrame()
-    b = b.assign(key=b["strategy"] + "・" + b["bet_type"])
+    b = b.assign(key=b["strategy"])  # 券種はまとめて、買い方ごとに1本の線
     d = b.groupby(["date", "key"])[["stake", "payout"]].sum().unstack("key").fillna(0).sort_index()
     cum = d["payout"].cumsum() / d["stake"].cumsum().replace(0, np.nan)
     return cum.reset_index().rename(columns={"date": "日付"})
@@ -123,16 +122,22 @@ EXPLAIN = [
     ("回収率", "払戻 ÷ 投資。100%を超えればプラス。競輪は払戻率が約75%なので、適当に買い続けると75%前後に近づく。"),
     ("95%区間", "運のブレを考えた回収率の幅。下限が100%を超えて初めて「勝てている可能性が高い」と言える。"),
     ("判定", "◎=運だけでは説明しにくいプラス / △=まだ運の範囲 / ×=負けている / データ不足=30点未満"),
-    ("AI本命", "AIの確率が一番高い組み合わせを各券種1点。依頼の『予想通りに買ったときの回収率』はこれ。"),
-    ("AI期待値", "AIの確率×オッズが基準（初期値1.2）以上の組み合わせだけ買う。オッズが取れたレースだけ。"),
-    ("人気1位", "一番人気（最低オッズ）を買い続けた場合。AIがこれに勝てないなら、AIを使う意味は薄い。"),
+    ("予想方法", "人気順 / 手作り7:3（強さ7・調子3、AIなし）/ LightGBM / LightGBM+競走得点 の4つを比べる（設計書どおり）。"),
+    ("〇〇・本命", "その予想方法で確率が一番高い組み合わせを各券種1点。『予想通りに買ったときの回収率』はこれ。"),
+    ("〇〇・期待値", "確率×オッズが基準（初期値1.2）以上の組み合わせだけ買う。オッズが取れたレースだけ。"),
+    ("人気1位", "一番人気（最低オッズ）を買い続けた場合。これに勝てないなら、予想方法を使う意味は薄い。"),
+    ("1位予想の1着率", "その方法で1着確率が一番高い選手が、実際に1着だった割合。回収率より安定していて比べやすい。"),
+    ("予想のズレ", "1着になった選手に、どれだけ低い確率をつけていたか。小さいほど良い。でたらめ予想より小さくないと意味がない。"),
+    ("AIが重視した列", "LightGBM がどの列を判断に多く使ったか（合計100%）。あなたの感覚と違うところは要確認。"),
+    ("格が不明なレース名", "格を自動で決められなかったレース名。race_names.csv に点数を書くと次回から使われる。"),
     ("本番 / 過去検証", "本番=毎日の自動仮想購入。過去検証=過去データでの試算（本番より甘く出やすいので参考程度）。"),
     ("確定オッズで判断(参考値)", "締切後のオッズを使って判断した点数。実際には買えないタイミングなので、多いほど結果は甘い。"),
     ("注意", "これは記録用の仮想購入で、実際の購入はしていない。架空データ（sample）での数字は本物の競輪と無関係。"),
 ]
 
 
-def write_report(db: DB, path: str | Path, model: WinProbModel | None = None) -> Path:
+def write_report(db: DB, path: str | Path, eval_info: dict | None = None,
+                 unknown_names: pd.DataFrame | None = None) -> Path:
     path = Path(path)
     bets = db.df("SELECT * FROM bets WHERE status IN ('won','lost')")
     all_bets = db.df("SELECT * FROM bets ORDER BY decided_at DESC, id DESC LIMIT 5000")
@@ -142,8 +147,8 @@ def write_report(db: DB, path: str | Path, model: WinProbModel | None = None) ->
     cum = cumulative_pivot(bets, cum_mode)
 
     last_date = db.con.execute("SELECT MAX(r.date) FROM predictions p JOIN races r USING (race_id)").fetchone()[0]
-    preds = db.df("""SELECT r.date AS 日付, r.venue AS 場, r.race_no AS R, r.start_time AS 発走, e.car_no AS 車番,
-                            e.name AS 選手, e.class_rank AS 級班, e.score AS 競走得点, e.style AS 脚質,
+    preds = db.df("""SELECT r.date AS 日付, r.venue AS 場, r.race_no AS R, r.race_name AS レース名,
+                            r.start_time AS 発走, e.car_no AS 車番, e.name AS 選手,
                             e.line_id AS ライン, e.line_pos AS 並び, p.win_prob AS AI勝率, e.finish AS 着順
                      FROM predictions p JOIN races r USING (race_id)
                      JOIN entries e ON e.race_id=p.race_id AND e.car_no=p.car_no
@@ -163,18 +168,31 @@ def write_report(db: DB, path: str | Path, model: WinProbModel | None = None) ->
         hist = hist.drop(columns=["id"])
 
     info = [("更新日時", datetime.now().strftime("%Y-%m-%d %H:%M"))]
-    if model is not None and model.coef is not None:
-        info += [("AI学習レース数", model.trained_races), ("AIバージョン", model.version)]
-        for k, v in (model.metrics or {}).items():
-            info.append((f"評価: {k}", round(v, 4) if isinstance(v, float) else v))
-    else:
-        info.append(("AI", "学習データ不足のため、競走得点ベースの仮予想"))
+    comp = pd.DataFrame()
+    imp = pd.DataFrame()
+    if eval_info:
+        info += [("学習に使ったレース", f"{eval_info['train_races']}レース（{eval_info['cut_date']} より前）"),
+                 ("検証に使ったレース", f"{eval_info['test_races']}レース（{eval_info['cut_date']} 以降）")]
+        comp = pd.DataFrame(eval_info["table"])
+        parts = []
+        for name, rows in eval_info.get("importance", {}).items():
+            t = pd.DataFrame(rows)
+            if not t.empty:
+                parts.append(t.assign(予想方法=name)[["予想方法", "特徴量", "重要度"]])
+        imp = pd.concat(parts) if parts else pd.DataFrame()
 
     def _write(target: Path):
         with pd.ExcelWriter(target, engine="openpyxl") as xw:
             head = pd.DataFrame(info, columns=["項目", "値"])
             head.to_excel(xw, sheet_name="サマリー", index=False)
-            start = len(head) + 3
+            comp_row = len(head) + 3
+            if not comp.empty:
+                pd.DataFrame({"【1】的中率で比べる（検証期間）": []}).to_excel(
+                    xw, sheet_name="サマリー", index=False, startrow=comp_row - 2)
+                comp.to_excel(xw, sheet_name="サマリー", index=False, startrow=comp_row - 1)
+            start = comp_row + (len(comp) + 4 if not comp.empty else 0)
+            pd.DataFrame({"【2】回収率で比べる（仮想購入）": []}).to_excel(
+                xw, sheet_name="サマリー", index=False, startrow=start - 2)
             if summ.empty:
                 pd.DataFrame({"お知らせ": ["まだ結果の出た仮想購入がありません"]}).to_excel(
                     xw, sheet_name="サマリー", index=False, startrow=start - 1)
@@ -184,14 +202,19 @@ def write_report(db: DB, path: str | Path, model: WinProbModel | None = None) ->
             (cum if not cum.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="累計回収率グラフ", index=False)
             (preds if not preds.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="最新の予想", index=False)
             (hist if not hist.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="購入履歴", index=False)
-            coef = model.coef_table() if model is not None else pd.DataFrame(columns=["特徴量", "重み"])
-            coef.to_excel(xw, sheet_name="AIの重み", index=False)
+            (imp if not imp.empty else pd.DataFrame(columns=["予想方法", "特徴量", "重要度"])).to_excel(
+                xw, sheet_name="AIが重視した列", index=False)
+            un = unknown_names if unknown_names is not None and not unknown_names.empty else \
+                pd.DataFrame({"race_name": [], "件数": []})
+            un.to_excel(xw, sheet_name="格が不明なレース名", index=False)
             pd.DataFrame(EXPLAIN, columns=["用語", "説明"]).to_excel(xw, sheet_name="説明", index=False)
 
             wb = xw.book
             ws = wb["サマリー"]
             ws.column_dimensions["A"].width = 22
             ws.column_dimensions["B"].width = 22
+            if not comp.empty:
+                _style(ws, comp, pct_cols=[c for c in comp.columns if c.endswith("率")], start_row=comp_row)
             if not summ.empty:
                 _style(ws, summ, pct_cols=["的中率", "回収率", "95%区間 下限", "95%区間 上限"],
                        yen_cols=["投資(円)", "払戻(円)", "収支(円)"], start_row=start)
@@ -201,6 +224,7 @@ def write_report(db: DB, path: str | Path, model: WinProbModel | None = None) ->
                 ("日別", daily, ["回収率", "累計回収率"], ["投資", "払戻", "累計投資", "累計払戻"]),
                 ("最新の予想", preds, ["AI勝率"], []),
                 ("購入履歴", hist, ["AI確率"], ["金額", "払戻"]),
+                ("AIが重視した列", imp, ["重要度"], []),
             ]:
                 if not df.empty:
                     _style(wb[name], df, pct, yen)

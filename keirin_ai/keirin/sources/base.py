@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class RaceCard:
-    race: dict                      # races テーブルの1行分（race_id, date, venue, race_no, grade, start_time, n_riders）
+    race: dict                      # races テーブルの1行分（race_id, date, venue, race_no, grade, race_name, race_class, start_time, n_riders）
     entries: list[dict]             # entries テーブルの行（着順なし）
 
 
@@ -27,6 +27,7 @@ class RaceResult:
     race_id: str
     finishes: dict[int, int]                      # {車番: 着順}（失格等は 9）
     scratched: list[int] = field(default_factory=list)
+    kimarite: dict[int, str] = field(default_factory=dict)        # {車番: 決まり手}（逃げ/捲り/差し/マーク）
     payouts: dict[str, dict[str, int]] = field(default_factory=dict)  # {券種: {組み合わせ: 100円あたり払戻}}
     final_odds: OddsSnapshot | None = None
 

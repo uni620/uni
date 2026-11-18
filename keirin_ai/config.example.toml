@@ -19,13 +19,19 @@ csv_inbox = "inbox"
 request_interval_sec = 3.0   # 1回のアクセスごとに最低これだけ待つ
 user_agent = "keirin-ai-personal/0.1"
 
+[features]
+# 設計書「仮の数値」。データを見ながら調整する。
+jiriki_threshold = 0.6       # 自力型とみなす自力度（ほかのラインの先行選手の数を数えるとき）
+form_days = 90               # 調子を見る期間（日）= 3か月
+trend_races = 4              # 調子の上向き度の「直近」何走
+race_names_csv = "race_names.csv"  # レース名→格 の対応表（列: race_name,kaku）。無ければ自動判定のみ
+
+[methods]
+# 比べる予想方法（設計書「比べる相手」）。人気順はオッズがあれば自動で入る。
+compare = ["手作り7:3", "LightGBM", "LightGBM+競走得点"]
+
 [model]
-# 何着までを学習に使うか（1=1着のみ, 3=1〜3着）と各着順の重み
-explode_depth = 3
-explode_weights = [1.0, 0.7, 0.5]
-l2 = 1.0                     # 過学習を防ぐ強さ（大きいほど控えめな予想）
-min_train_races = 200        # これ未満のレース数しかないときは学習しない
-form_window = 10             # 直近成績として見るレース数
+min_train_races = 300        # 本番（daily）で学習するのに必要な最低レース数
 
 [combos]
 # 2着・3着の確率の計算補正（1.0 = 標準的なハービル式）。
@@ -37,10 +43,10 @@ lambda3 = 1.0
 bet_types = ["2車複", "2車単", "3連複"]
 stake = 100                  # 1点あたりの仮想購入額（円）
 
-# 戦略1「AI本命」: AIの確率が一番高い組み合わせを各券種1点ずつ買う（オッズ不要）
+# 「〇〇・本命」: その予想方法で確率が一番高い組み合わせを各券種1点ずつ買う（オッズ不要）
 honmei_enabled = true
 
-# 戦略2「AI期待値」: 確率×オッズ が min_ev 以上の組み合わせだけ買う（オッズ必要）
+# 「〇〇・期待値」: 確率×オッズ が min_ev 以上の組み合わせだけ買う（オッズ必要）
 ev_enabled = true
 min_ev = 1.2
 min_prob = 0.02

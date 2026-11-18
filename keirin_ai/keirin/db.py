@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS races (
     date        TEXT NOT NULL,      -- YYYY-MM-DD
     venue       TEXT NOT NULL,
     race_no     INTEGER NOT NULL,
-    grade       TEXT,               -- GP/G1/G2/G3/F1/F2 など
+    grade       TEXT,               -- 大会グレード GP/G1/G2/G3/F1/F2
+    race_name   TEXT,               -- レース名（一般/予選/準決勝/決勝/特選/ドリーム など）
+    race_class  TEXT,               -- S級/A級/A級チャレンジ/ガールズ
     start_time  TEXT,               -- HH:MM（分からなければ空）
     n_riders    INTEGER,
     has_result  INTEGER DEFAULT 0
@@ -41,6 +43,7 @@ CREATE TABLE IF NOT EXISTS entries (
     line_size   INTEGER,            -- ラインの人数（単騎=1）
     scratched   INTEGER DEFAULT 0,  -- 欠車なら1
     finish      INTEGER,            -- 着順（失格・落車・途中棄権は 9）
+    kimarite    TEXT,               -- このレースでの決まり手（逃げ/捲り/差し/マーク。なければ空）
     PRIMARY KEY (race_id, car_no)
 );
 CREATE TABLE IF NOT EXISTS odds (
@@ -102,6 +105,15 @@ class DB:
         self.con = sqlite3.connect(self.path)
         self.con.execute("PRAGMA foreign_keys = ON")
         self.con.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        """古いデータベースに新しい列を足す。"""
+        for table, col in [("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT")]:
+            try:
+                self.con.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
 
     def close(self):
         self.con.close()
@@ -109,16 +121,17 @@ class DB:
     # ---------- 書き込み ----------
     def upsert_race(self, r: dict):
         self.con.execute(
-            """INSERT INTO races (race_id, date, venue, race_no, grade, start_time, n_riders)
-               VALUES (:race_id, :date, :venue, :race_no, :grade, :start_time, :n_riders)
+            """INSERT INTO races (race_id, date, venue, race_no, grade, race_name, race_class, start_time, n_riders)
+               VALUES (:race_id, :date, :venue, :race_no, :grade, :race_name, :race_class, :start_time, :n_riders)
                ON CONFLICT(race_id) DO UPDATE SET
-                 grade=excluded.grade, start_time=excluded.start_time, n_riders=excluded.n_riders""",
-            {"grade": None, "start_time": None, "n_riders": None, **r},
+                 grade=excluded.grade, race_name=excluded.race_name, race_class=excluded.race_class,
+                 start_time=excluded.start_time, n_riders=excluded.n_riders""",
+            {"grade": None, "race_name": None, "race_class": None, "start_time": None, "n_riders": None, **r},
         )
 
     def upsert_entries(self, rows: list[dict]):
         cols = ["race_id", "car_no", "rider_id", "name", "class_rank", "score", "style",
-                "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish"]
+                "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish", "kimarite"]
         for r in rows:
             d = {c: r.get(c) for c in cols}
             d["home"] = d["home"] or 0
@@ -130,9 +143,12 @@ class DB:
                 d,
             )
 
-    def set_results(self, race_id: str, finishes: dict[int, int], scratched: list[int] | None = None):
+    def set_results(self, race_id: str, finishes: dict[int, int], scratched: list[int] | None = None,
+                    kimarite: dict[int, str] | None = None):
         for car, fin in finishes.items():
             self.con.execute("UPDATE entries SET finish=? WHERE race_id=? AND car_no=?", (fin, race_id, car))
+        for car, k in (kimarite or {}).items():
+            self.con.execute("UPDATE entries SET kimarite=? WHERE race_id=? AND car_no=?", (k, race_id, car))
         for car in scratched or []:
             self.con.execute("UPDATE entries SET scratched=1 WHERE race_id=? AND car_no=?", (race_id, car))
         self.con.execute("UPDATE races SET has_result=1 WHERE race_id=?", (race_id,))
@@ -159,7 +175,7 @@ class DB:
         return pd.read_sql_query(sql, self.con, params=params)
 
     def entries_with_race(self, until_date: str | None = None, dates: list[str] | None = None) -> pd.DataFrame:
-        sql = """SELECT e.*, r.date, r.venue, r.race_no, r.grade, r.start_time, r.has_result
+        sql = """SELECT e.*, r.date, r.venue, r.race_no, r.grade, r.race_name, r.race_class, r.start_time, r.has_result
                  FROM entries e JOIN races r USING (race_id)"""
         params: list = []
         if until_date:
