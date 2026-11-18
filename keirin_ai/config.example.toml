@@ -28,7 +28,7 @@ trend_races = 4              # 調子の上向き度の「直近」何走
 race_names_csv = "race_names.csv"  # レース名→格 の対応表（列: race_name,kaku）。無ければ自動判定のみ
 
 [methods]
-# 比べる予想方法（設計書「比べる相手」）。人気順はオッズがあれば自動で入る。
+# 比べる予想方法（設計書「比べる相手」）。人気順は使わない方針。
 compare = ["手作り7:3", "LightGBM", "LightGBM+競走得点"]
 
 [model]
@@ -54,8 +54,8 @@ min_prob = 0.02
 max_odds = 150.0
 max_bets_per_race = 3        # 1レース・1券種あたりの最大点数
 
-# 比較用「人気1位」: 一番オッズが低い組み合わせを各券種1点買う（オッズ必要）
-baseline_enabled = true
+# 比較用「人気1位」: 一番オッズが低い組み合わせを各券種1点買う（オッズ必要）。人気順は使わない方針なので切っている
+baseline_enabled = false
 
 [schedule]
 # predict を実行したとき、発走まで何分以内のレースを対象にするか

@@ -185,7 +185,7 @@ def evaluate_split(db: DB, cfg: Config, test_frac: float = 0.22, allow_final_odd
 
     methods = train_methods(train, method_names(cfg))
     rows = []
-    pop = popularity_pred(db, test, allow_final_odds)
+    pop = popularity_pred(db, test, allow_final_odds) if cfg.section("strategy").get("baseline_enabled", False) else None
     if pop is not None:
         rows.append({"予想方法": "人気順", **evaluate(test, pop.dropna())})
     for m in methods:
