@@ -139,20 +139,38 @@ def cmd_import(cfg, args):
 
 
 def cmd_fetch(cfg, args):
+    """過去のレースをまとめて取り込む。途中で止めても、もう一度実行すれば続きから進む。"""
+    import time
     db = DB(cfg.path("db"))
     src = make_source(cfg)
     if src is None:
-        print("config.toml の [source] name にデータ取得元を設定してください")
+        print("config.toml の [source] name にデータ取得元（netkeirin など）を設定してください")
         return
-    d, end = date.fromisoformat(args.date_from), date.fromisoformat(args.date_to)
-    while d <= end:
-        ds = d.isoformat()
+    end = date.fromisoformat(args.date_to) if args.date_to else date.today() - timedelta(days=1)
+    start = date.fromisoformat(args.date_from) if args.date_from else end - timedelta(days=args.days - 1)
+    days = [(end - timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]  # 新しい日から
+    t0, total = time.time(), 0
+    for i, ds in enumerate(days, 1):
         try:
-            for race in pipeline.ingest_cards(db, src, ds):
-                pipeline.ingest_result(db, src, race)
+            races = pipeline.ingest_cards(db, src, ds)
         except Exception as e:
-            log.warning("%s の取得に失敗: %s", ds, e)
-        d += timedelta(days=1)
+            log.warning("%s のレース一覧の取得に失敗: %s", ds, e)
+            continue
+        done = {r[0] for r in db.con.execute("SELECT race_id FROM races WHERE date=? AND has_result=1", (ds,))}
+        n = 0
+        for race in races:
+            if race["race_id"] in done or race.get("race_class") == "ガールズ":
+                continue
+            try:
+                n += pipeline.ingest_result(db, src, race)
+            except Exception as e:
+                log.warning("結果の取得に失敗 %s: %s", race["race_id"], e)
+        total += n
+        el = time.time() - t0
+        print(f"  {ds}: {n}レース（{i}/{len(days)}日, 経過 {el / 60:.0f}分, 残り約 {el / i * (len(days) - i) / 60:.0f}分）",
+              flush=True)
+    have = db.con.execute("SELECT COUNT(*) FROM races WHERE has_result=1").fetchone()[0]
+    print(f"今回 {total} レース取り込み / データベース全体で結果のあるレース {have}")
     db.close()
 
 
@@ -245,8 +263,9 @@ def main(argv=None):
                     help="締切前オッズが無いデータ用。確定オッズで判断する（回収率は甘くなる＝参考値）")
     sub.add_parser("import-csv")
     fe = sub.add_parser("fetch")
-    fe.add_argument("--from", dest="date_from", required=True)
-    fe.add_argument("--to", dest="date_to", required=True)
+    fe.add_argument("--from", dest="date_from", help="取り込む最初の日（省略時は --days で決める）")
+    fe.add_argument("--to", dest="date_to", help="取り込む最後の日（省略時は昨日）")
+    fe.add_argument("--days", type=int, default=7, help="昨日から何日さかのぼるか（初期値7）")
     pr = sub.add_parser("predict")
     pr.add_argument("--date")
     pr.add_argument("--all", action="store_true")

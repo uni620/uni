@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS entries (
     scratched   INTEGER DEFAULT 0,  -- 欠車なら1
     finish      INTEGER,            -- 着順（失格・落車・途中棄権は 9）
     kimarite    TEXT,               -- このレースでの決まり手（逃げ/捲り/差し/マーク。なければ空）
+    km_nige     INTEGER,            -- 出走表に載っている決まり手の回数（レース前の情報）
+    km_makuri   INTEGER,
+    km_sashi    INTEGER,
+    km_mark     INTEGER,
     PRIMARY KEY (race_id, car_no)
 );
 CREATE TABLE IF NOT EXISTS odds (
@@ -109,7 +113,9 @@ class DB:
 
     def _migrate(self):
         """古いデータベースに新しい列を足す。"""
-        for table, col in [("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT")]:
+        for table, col in [("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT"),
+                           ("entries", "km_nige INTEGER"), ("entries", "km_makuri INTEGER"),
+                           ("entries", "km_sashi INTEGER"), ("entries", "km_mark INTEGER")]:
             try:
                 self.con.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -131,7 +137,8 @@ class DB:
 
     def upsert_entries(self, rows: list[dict]):
         cols = ["race_id", "car_no", "rider_id", "name", "class_rank", "score", "style",
-                "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish", "kimarite"]
+                "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish", "kimarite",
+                "km_nige", "km_makuri", "km_sashi", "km_mark"]
         for r in rows:
             d = {c: r.get(c) for c in cols}
             d["home"] = d["home"] or 0

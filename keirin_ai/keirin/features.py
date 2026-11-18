@@ -48,7 +48,8 @@ def _norm_kimarite(k) -> str | None:
     if k is None or (isinstance(k, float) and np.isnan(k)):
         return None
     k = str(k).strip()
-    for full, keys in {"逃げ": ("逃",), "捲り": ("捲", "まくり"), "差し": ("差",), "マーク": ("マ",)}.items():
+    # netkeirin の結果表は 逃/捲/差/ク（ク = マーク の略と判断）で表示される
+    for full, keys in {"逃げ": ("逃",), "捲り": ("捲", "まくり"), "差し": ("差",), "マーク": ("マ", "ク")}.items():
         if any(x in k for x in keys):
             return full
     return None
@@ -103,6 +104,13 @@ def build_features(raw: pd.DataFrame, jiriki_threshold: float = 0.6, form_days: 
     df["_ko"] = km.isin(OTHER_KIMARITE).astype(float)
     cj = g["_kj"].cumsum() - df["_kj"]          # 自分より前のレースだけの累計
     co = g["_ko"].cumsum() - df["_ko"]
+    # 出走表に決まり手の回数が載っていれば（レース前に公開される情報）、そちらを優先する
+    km_cols = ["km_nige", "km_makuri", "km_sashi", "km_mark"]
+    for c in km_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce") if c in df else np.nan
+    has_km = df[km_cols].notna().all(axis=1)
+    cj = cj.where(~has_km, df["km_nige"] + df["km_makuri"])
+    co = co.where(~has_km, df["km_sashi"] + df["km_mark"])
     df["kimarite_n"] = cj + co
     df["jiriki"] = (cj / df["kimarite_n"]).where(df["kimarite_n"] > 0)
     size = df["line_size"].fillna(1)

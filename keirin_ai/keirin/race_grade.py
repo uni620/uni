@@ -17,19 +17,26 @@ GRADE_BONUS = {"GP": 1.0, "G1": 0.8, "G2": 0.6, "G3": 0.4, "F1": 0.2, "F2": 0.0}
 
 # 上から順に調べる（「準決勝」は「決勝」を含むので先に調べる、など）
 RULES: list[tuple[str, float]] = [
-    ("準々決勝", 4),
-    ("準決勝", 5),
+    ("準々決", 4),
+    ("準決", 5),
     ("グランプリ", 6),
     ("決勝", 6),
     ("特別選抜予選", 5),
     ("特選予選", 5),
+    ("初日特別選抜", 5),
     ("初日特選", 5),
+    ("初特選", 5),
+    ("特別選抜", 5),
     ("ドリーム", 5),
     ("特別優秀", 4),
+    ("特秀", 4),
+    ("優秀", 4),
     ("二次予選", 4),
+    ("二予", 4),
     ("特一般", 1),
     ("特選", 3),
     ("一次予選", 2),
+    ("一予", 2),
     ("選抜", 2),
     ("予選", 2),
     ("一般", 1),
@@ -74,4 +81,4 @@ def kaku(name: str | None, grade: str | None, overrides: dict[str, float] | None
 
 
 def is_semifinal(name: str | None) -> bool:
-    return bool(name) and "準決勝" in str(name) and "準々決勝" not in str(name)
+    return bool(name) and "準決" in str(name) and "準々決" not in str(name)

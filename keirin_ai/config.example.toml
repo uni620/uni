@@ -12,12 +12,13 @@ log = "logs/keirin.log"
 # データの取り先。
 #   "sample" : 練習用のダミーデータ（ネット不要）
 #   "csv"    : templates フォルダと同じ形式のCSVを inbox フォルダに置いて取り込む
-#   サイト用の取得部品は、サイトが決まってから追加します（README参照）
+#   "netkeirin": netkeirin から取得（fetch コマンド）。取ったデータは私的利用のみ・公開しないこと
 name = "sample"
 csv_inbox = "inbox"
 # スクレイピング時のマナー設定（サイト用部品で使用）
-request_interval_sec = 3.0   # 1回のアクセスごとに最低これだけ待つ
+request_interval_sec = 3.0   # 1回のアクセスごとに最低これだけ待つ（短くしないこと）
 user_agent = "keirin-ai-personal/0.1"
+cache_dir = "data/cache"     # 取得したページの保存先（途中から再開するときに使う）
 
 [features]
 # 設計書「仮の数値」。データを見ながら調整する。

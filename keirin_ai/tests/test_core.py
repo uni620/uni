@@ -49,6 +49,8 @@ def test_race_level_rules():
     assert race_level("準決勝") == 5 and race_level("準々決勝") == 4 and race_level("決勝") == 6
     assert race_level("初日特選") == 5 and race_level("特選") == 3 and race_level("特別優秀") == 4
     assert race_level("一次予選") == 2 and race_level("特一般") == 1 and race_level("スタールビー賞") == 5
+    assert race_level("初日特別選抜") == 5 and race_level("特秀") == 4 and race_level("選抜") == 2
+    assert race_level("準決") == 5 and race_level("二予A") == 4
     assert race_level("なぞのレース") is None
     assert kaku("準決勝", "G1") == pytest.approx(5.8)
     assert race_level("なぞのレース", {"なぞのレース": 3}) == 3
@@ -148,3 +150,64 @@ def test_sample_hides_future_results():
     src = SampleSource(seed=2, now=datetime(2025, 1, 1, 9, 0), start="2025-01-01")
     race = src.fetch_cards("2025-01-01")[0].race
     assert src.fetch_result(race) is None
+
+
+# ---------- netkeirin の読み取り（ページの形だけをまねた手書きのHTMLで確認） ----------
+from keirin.features import _norm_kimarite  # noqa: E402
+from keirin.sources.netkeirin import (apply_narabi, parse_entry, parse_narabi, parse_race_list,  # noqa: E402
+                                      parse_result, split_race_name)
+
+ENTRY = """<html><head><title>テスト競輪 テスト杯 GIII 出走表</title></head><body>
+<span class="Icon_GradeType">GIII</span><div class="Race_Name">Ｓ級 準決勝</div>
+<div class="Race_Data">発走 9:05 締切 9:00</div>
+<table id="RaceCard_Table_Fixed"><thead><tr class="Header"><th>枠</th><th>車</th><th></th><th>本紙</th><th>選手名</th>
+<th>競走得点</th><th>脚質</th><th>S</th><th>H</th><th>B</th><th>逃げ</th><th>まくり</th><th>差し</th><th>マ｜ク</th></tr></thead>
+<tbody>
+<tr class="PlayerList"><td>1</td><td>1</td><td></td><td></td><td><a id="names_100_202601010101">選手A</a></td>
+<td>110.5</td><td><span>1</span>逃</td><td>1</td><td>0</td><td>0</td><td>4</td><td>2</td><td>0</td><td>0</td></tr>
+<tr class="PlayerList"><td>2</td><td>2</td><td></td><td></td><td><a id="names_200_202601010101">選手B</a></td>
+<td>105.0</td><td><span>3</span>追</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>3</td></tr>
+<tr class="PlayerList"><td>3</td><td>3</td><td></td><td></td><td><a id="names_300_202601010101">選手C</a></td>
+<td>100.0</td><td><span>2</span>両</td><td>0</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+</tbody></table></body></html>"""
+
+NARABI = """<div class="DeployBox">
+<div class="Shaban_InBox"><span class="Waku1 Shaban_Num">1</span></div>
+<div class="Shaban_InBox"><span class="Waku2 Shaban_Num">2</span></div>
+<div class="Shaban_InBox"><span class="WakuSeparat"></span></div>
+<div class="Shaban_InBox"><span class="Waku3 Shaban_Num">3</span></div></div>"""
+
+RESULT = """<table id="All_Result_Table"><tr class="Header"><th>着</th><th>枠番</th><th>車番</th><th>選手名</th>
+<th>着差</th><th>上り</th><th>決</th><th>SB</th></tr>
+<tr class="PlayerList"><td>1着</td><td>2</td><td>2</td><td>B</td><td></td><td>11.0</td><td>差</td><td></td></tr>
+<tr class="PlayerList"><td>2着</td><td>1</td><td>1</td><td>A</td><td></td><td>11.2</td><td>逃</td><td>B</td></tr>
+<tr class="PlayerList"><td>失</td><td>3</td><td>3</td><td>C</td><td></td><td></td><td></td><td></td></tr></table>
+<table class="Payout_Detail_Table">
+<tr class="Umaren"><th>２車複</th><td class="Result">1-2</td><td class="Payout"><span>1,230円</span></td></tr>
+<tr class="Umatan"><th>２車単</th><td class="Result">2&gt;1</td><td class="Payout"><span>2,450円</span></td></tr>
+<tr class="Fuku3"><th>３連複</th><td class="Result">3-1-2</td><td class="Payout"><span>990円</span></td></tr></table>"""
+
+
+def test_netkeirin_parsers():
+    race, rows = parse_entry(ENTRY, "202601010101")
+    assert race["race_class"] == "S級" and race["race_name"] == "準決勝" and race["grade"] == "G3"
+    assert race["start_time"] == "09:05" and race["venue"] == "テスト" and race["date"] == "2026-01-01"
+    assert [r["rider_id"] for r in rows] == ["100", "200", "300"]
+    assert rows[0]["score"] == 110.5 and rows[0]["km_nige"] == 4 and rows[1]["km_mark"] == 3
+    lines = parse_narabi(NARABI)
+    assert lines == [[1, 2], [3]]
+    apply_narabi(rows, lines)
+    assert (rows[1]["line_id"], rows[1]["line_pos"], rows[1]["line_size"]) == (1, 2, 2)
+    assert rows[2]["line_size"] == 1
+    res = parse_result(RESULT, "202601010101")
+    assert res.finishes == {2: 1, 1: 2, 3: 9} and res.kimarite == {2: "差", 1: "逃"}
+    assert res.payouts == {"2車複": {"1-2": 1230}, "2車単": {"2>1": 2450}, "3連複": {"1-2-3": 990}}
+
+
+def test_race_name_split_and_kimarite():
+    assert split_race_name("Ｌ級ガールズ予選１") == ("ガールズ", "予選1")
+    assert split_race_name("Ａ級チャレンジ 一般") == ("A級チャレンジ", "一般")
+    assert _norm_kimarite("ク") == "マーク" and _norm_kimarite("捲") == "捲り"
+    ids, venues = parse_race_list('<li id="btn_jyoname_28"><a>立川<span class="Icon_Grade">GIII</span></a></li>'
+                                  '<a href="x?race_id=202601012801">1R</a>')
+    assert ids == ["202601012801"] and venues == {"28": {"venue": "立川", "grade": "G3"}}
