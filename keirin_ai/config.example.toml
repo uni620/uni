@@ -1,0 +1,55 @@
+# 競輪予想AI 設定ファイル
+# このファイルを config.toml という名前でコピーして使います（setup.bat が自動でコピーします）。
+# 「#」から後ろはメモ（コメント）なので、動作には影響しません。
+
+[paths]
+db = "data/keirin.sqlite"          # データベース（過去レース・仮想購入の記録）
+excel = "output/回収率レポート.xlsx"  # 毎日更新されるExcel
+model = "data/model.json"          # 学習済みAIの保存先
+log = "logs/keirin.log"
+
+[source]
+# データの取り先。
+#   "sample" : 練習用のダミーデータ（ネット不要）
+#   "csv"    : templates フォルダと同じ形式のCSVを inbox フォルダに置いて取り込む
+#   サイト用の取得部品は、サイトが決まってから追加します（README参照）
+name = "sample"
+csv_inbox = "inbox"
+# スクレイピング時のマナー設定（サイト用部品で使用）
+request_interval_sec = 3.0   # 1回のアクセスごとに最低これだけ待つ
+user_agent = "keirin-ai-personal/0.1"
+
+[model]
+# 何着までを学習に使うか（1=1着のみ, 3=1〜3着）と各着順の重み
+explode_depth = 3
+explode_weights = [1.0, 0.7, 0.5]
+l2 = 1.0                     # 過学習を防ぐ強さ（大きいほど控えめな予想）
+min_train_races = 200        # これ未満のレース数しかないときは学習しない
+form_window = 10             # 直近成績として見るレース数
+
+[combos]
+# 2着・3着の確率の計算補正（1.0 = 標準的なハービル式）。
+# 1.0未満にすると、人気薄が2・3着に来る確率を少し高めに見積もる。
+lambda2 = 1.0
+lambda3 = 1.0
+
+[strategy]
+bet_types = ["2車複", "2車単", "3連複"]
+stake = 100                  # 1点あたりの仮想購入額（円）
+
+# 戦略1「AI本命」: AIの確率が一番高い組み合わせを各券種1点ずつ買う（オッズ不要）
+honmei_enabled = true
+
+# 戦略2「AI期待値」: 確率×オッズ が min_ev 以上の組み合わせだけ買う（オッズ必要）
+ev_enabled = true
+min_ev = 1.2
+min_prob = 0.02
+max_odds = 150.0
+max_bets_per_race = 3        # 1レース・1券種あたりの最大点数
+
+# 比較用「人気1位」: 一番オッズが低い組み合わせを各券種1点買う（オッズ必要）
+baseline_enabled = true
+
+[schedule]
+# predict を実行したとき、発走まで何分以内のレースを対象にするか
+predict_window_min = 40
