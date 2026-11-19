@@ -24,12 +24,18 @@ FEATURES = [
     # 5 格
     "kaku_now", "kaku_usual", "kaku_diff", "kaku_member_diff", "race_class_code", "semi_finish",
 ]
+# 保留中の列: 計算はするが AI には渡さない。
+# 2026-11-19 に 925 レースで比べたところ 1着率はほぼ変わらなかった（LightGBM 43.9%→43.9%）。
+# 過去データが少なく、同じ位置の過去出走が平均約7回しかないため。データが増えたら FEATURES に足して比べ直す。
+POS_RECORD_FEATURES = ["pos_n", "pos_win", "pos_top3", "pos_top3_diff"]
 CATEGORICAL = ["pos_type", "race_class_code"]
 SCORE_FEATURE = "score_diff"   # 「機械学習＋競走得点」の比較用
 
 FEATURE_JA = {
     "jiriki": "自力度", "kimarite_n": "決まり手の合計回数", "pos_type": "今回の位置",
-    "pos_fit": "位置の適性", "line_gap": "ラインの力量差", "other_senko_n": "ほかのラインの先行選手の数",
+    "pos_fit": "位置の適性", "pos_n": "同じ位置の過去出走数", "pos_win": "同じ位置での勝率",
+    "pos_top3": "同じ位置での複勝率", "pos_top3_diff": "同じ位置での複勝率−全体の複勝率",
+"line_gap": "ラインの力量差", "other_senko_n": "ほかのラインの先行選手の数",
     "recent_finish": "直近の大会の着順（平均）", "is_current_meet": "どちらの大会か（今大会=1）",
     "days_since_prev": "前大会からの日数", "win_3m": "3か月の勝率", "top2_3m": "3か月の連対率",
     "top3_3m": "3か月の複勝率", "n_3m": "3か月の出走数", "trend": "調子の上向き度",
@@ -39,6 +45,7 @@ FEATURE_JA = {
 }
 
 POS_TYPES = {"先頭": 0, "番手": 1, "3番手": 2, "単騎": 3}
+POS_PRIOR = 3.0   # 位置別の成績を、全体の成績に何走分寄せるか（回数が少ない位置のブレを抑える）
 CLASS_CODES = {"A級チャレンジ": 0, "A級": 1, "S級": 2}
 JIRIKI_KIMARITE = {"逃げ", "捲り"}
 OTHER_KIMARITE = {"差し", "マーク"}
@@ -118,6 +125,26 @@ def build_features(raw: pd.DataFrame, jiriki_threshold: float = 0.6, form_days: 
     df["pos_type"] = np.select([size <= 1, pos == 1, pos == 2], [3, 0, 1], default=2).astype(float)
     df["pos_fit"] = np.select([df["pos_type"] == 0, df["pos_type"] == 1], [df["jiriki"], 1 - df["jiriki"]],
                               default=np.nan)
+
+    # 位置ごとの実績: 過去に「今回と同じ位置」を走ったときの成績（勝率・複勝率を位置別に分けて見る）
+    # 回数が少ないとブレるので、その選手の全体の成績に寄せて補正する（POS_PRIOR 走分の重み）
+    w = (fin == 1).astype(float).where(valid, 0.0)
+    t3 = (fin <= 3).astype(float).where(valid, 0.0)
+    ok = valid.astype(float)
+    gp = pd.DataFrame({"r": df["rider_id"], "p": df["pos_type"], "ok": ok, "w": w, "t3": t3}) \
+        .groupby(["r", "p"], sort=False)
+    pn = gp["ok"].cumsum() - ok                   # 自分より前のレースだけ
+    pw = gp["w"].cumsum() - w
+    pt3 = gp["t3"].cumsum() - t3
+    an = ok.groupby(df["rider_id"]).cumsum() - ok
+    aw = w.groupby(df["rider_id"]).cumsum() - w
+    at3 = t3.groupby(df["rider_id"]).cumsum() - t3
+    all_win = (aw / an).where(an > 0)
+    all_t3 = (at3 / an).where(an > 0)
+    df["pos_n"] = pn
+    df["pos_win"] = ((pw + POS_PRIOR * all_win) / (pn + POS_PRIOR)).where(an > 0)
+    df["pos_top3"] = ((pt3 + POS_PRIOR * all_t3) / (pn + POS_PRIOR)).where(an > 0)
+    df["pos_top3_diff"] = df["pos_top3"] - all_t3
 
     # ---------- 3 強さ（今大会・前大会の着順） ----------
     df["_fin"] = fin

@@ -91,6 +91,13 @@ def test_features_use_only_past():
     # 位置の適性: 先頭なら自力度、番手なら 1-自力度
     assert f.loc[("2025-01-03", "a"), "pos_fit"] == 1.0
     assert f.loc[("2025-01-03", "b"), "pos_fit"] == 1.0
+    # 同じ位置での実績: 1日目は過去なし。a は先頭で 1着→2着。3走分だけ全体の成績に寄せる
+    assert np.isnan(f.loc[("2025-01-01", "a"), "pos_win"])
+    assert f.loc[("2025-01-02", "a"), "pos_n"] == 1
+    assert f.loc[("2025-01-02", "a"), "pos_win"] == 1.0
+    assert f.loc[("2025-01-03", "a"), "pos_n"] == 2
+    assert f.loc[("2025-01-03", "a"), "pos_win"] == pytest.approx((1 + 3 * 0.5) / (2 + 3))
+    assert f.loc[("2025-01-03", "a"), "pos_top3"] == 1.0
     # 格の差: 普段（予選2.2, 準決勝5.2 の平均）− 今回（決勝6.2）
     assert f.loc[("2025-01-03", "a"), "kaku_diff"] == pytest.approx((2.2 + 5.2) / 2 - 6.2)
 
