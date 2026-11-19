@@ -16,7 +16,7 @@ from .features import build_features
 from .model import LGBModel, evaluate, make_methods
 from .race_grade import load_overrides
 from .sources.base import OddsSnapshot, Source
-from .strategy import decide_baseline, decide_bets
+from .strategy import decide_baseline, decide_bets, filtered_bets
 
 log = logging.getLogger(__name__)
 
@@ -113,8 +113,9 @@ def predict_and_bet(db: DB, cfg: Config, methods: list, feats: pd.DataFrame, rac
         bets = decide_baseline(odds_by_type, final_flags, scfg)
         for name, p in preds.items():
             wp = p.loc[g.index, "p_win"].to_numpy()
-            bets += decide_bets(name, cars, wp, odds_by_type, final_flags, scfg,
-                                ccfg.get("lambda2", 1.0), ccfg.get("lambda3", 1.0))
+            mb = decide_bets(name, cars, wp, odds_by_type, final_flags, scfg,
+                             ccfg.get("lambda2", 1.0), ccfg.get("lambda3", 1.0))
+            bets += mb + filtered_bets(mb, row.get("race_class"), scfg)
         if save_predictions_of and save_predictions_of in preds:
             p = preds[save_predictions_of]
             for car, pw in zip(g["car_no"], p.loc[g.index, "p_win"]):

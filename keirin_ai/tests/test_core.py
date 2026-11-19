@@ -237,3 +237,20 @@ def test_bank_length_parsed_from_entry_page():
                                  ("周長距離は500メートル。見なし直線は52mと比較的短い。", 500, 52.0)]:
         race, _ = parse_entry(f"<html><title>X競輪</title><body><p>{text}</p></body></html>", "202611190101")
         assert (race["bank_len"], race["straight_len"]) == (bank, straight)
+
+
+def test_trio_shift_filtered_and_min_odds():
+    from keirin.strategy import decide_bets, filtered_bets, min_odds
+    cfg = {"bet_types": ["2車複", "2車単", "3連複"], "stake": 100}
+    bets = decide_bets("M", [1, 2, 3, 4, 5], [0.4, 0.25, 0.15, 0.12, 0.08], {}, {}, cfg)
+    honmei = [b for b in bets if b["strategy"] == "M・本命"]
+    shift = [b for b in bets if b["strategy"] == "M・3連複ずらし"]
+    assert len(honmei) == 3 and len(shift) == 3
+    assert all(b["bet_type"] == "3連複" for b in shift)
+    top3 = next(b for b in honmei if b["bet_type"] == "3連複")["combo"]
+    assert top3 == "1-2-3" and top3 not in {b["combo"] for b in shift}   # 1番の組み合わせは含めない
+    assert shift[0]["prob"] >= shift[1]["prob"] >= shift[2]["prob"]
+    f = filtered_bets(bets, "A級", cfg)
+    assert {b["bet_type"] for b in f} == {"2車単", "2車複"} and all(b["strategy"] == "M・絞り込み" for b in f)
+    assert filtered_bets(bets, "A級チャレンジ", cfg) == []
+    assert min_odds(0.2) == 6.0 and min_odds(0.2, 1.0) == 5.0 and min_odds(None) is None

@@ -13,6 +13,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .db import DB
+from .strategy import min_odds
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +133,9 @@ EXPLAIN = [
     ("格が不明なレース名", "格を自動で決められなかったレース名。race_names.csv に点数を書くと次回から使われる。"),
     ("本番 / 過去検証", "本番=毎日の自動仮想購入。過去検証=過去データでの試算（本番より甘く出やすいので参考程度）。"),
     ("確定オッズで判断(参考値)", "締切後のオッズを使って判断した点数。実際には買えないタイミングなので、多いほど結果は甘い。"),
+    ("〇〇・3連複ずらし", "3連複で確率1番の組み合わせは人気が集まり配当が安いので、2〜4番目の3点を買う。過去検証で1番だけより回収率が高かった。"),
+    ("〇〇・絞り込み", "本命のうち、成績の悪い3連複とA級チャレンジのレースを外したもの（2車単・2車複だけ）。"),
+    ("買う目安オッズ", "AIの確率×オッズが1.2以上になる最低の倍率。アプリで見たオッズがこれ未満なら、期待値が足りないので見送りが目安。損得なしオッズは1.0倍のライン。AIの確率はほぼ正確（確率8%→実際約10%）だが、保証ではない。"),
     ("注意", "これは記録用の仮想購入で、実際の購入はしていない。架空データ（sample）での数字は本物の競輪と無関係。"),
 ]
 
@@ -158,6 +162,17 @@ def write_report(db: DB, path: str | Path, eval_info: dict | None = None,
         preds.insert(preds.columns.get_loc("AI勝率") + 1, "AI順位",
                      preds.groupby(["場", "R"])["AI勝率"].rank(ascending=False, method="first").astype(int))
 
+    # 今日の買い目と「この倍率未満なら買わない」目安（AIの確率×オッズ ≥ 1.2 になる最低オッズ）
+    margin = 1.2
+    today = db.df("""SELECT r.venue AS 場, r.race_no AS R, r.start_time AS 発走, b.strategy AS 戦略,
+                            b.bet_type AS 券種, b.combo AS 買い目, b.prob AS AI確率, b.status AS 結果, b.payout AS 払戻
+                     FROM bets b JOIN races r USING (race_id)
+                     WHERE b.mode='live' AND b.date=(SELECT MAX(date) FROM bets WHERE mode='live')
+                     ORDER BY r.start_time, r.venue, r.race_no, b.strategy, b.bet_type""")
+    if not today.empty:
+        today["損得なしオッズ"] = today["AI確率"].map(lambda p: min_odds(p, 1.0))
+        today["買う目安オッズ(これ未満は見送り)"] = today["AI確率"].map(lambda p: min_odds(p, margin))
+        today["結果"] = today["結果"].map({"won": "的中", "lost": "外れ", "refund": "返還", "open": "未確定"})
     hist = all_bets.rename(columns={
         "mode": "区分", "race_id": "レースID", "date": "日付", "strategy": "戦略", "bet_type": "券種",
         "combo": "買い目", "stake": "金額", "prob": "AI確率", "odds": "オッズ", "odds_final": "確定オッズ使用",
@@ -200,6 +215,7 @@ def write_report(db: DB, path: str | Path, eval_info: dict | None = None,
                 summ.to_excel(xw, sheet_name="サマリー", index=False, startrow=start - 1)
             (daily if not daily.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="日別", index=False)
             (cum if not cum.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="累計回収率グラフ", index=False)
+            (today if not today.empty else pd.DataFrame({"場": []})).to_excel(xw, sheet_name="今日の買い目と目安オッズ", index=False)
             (preds if not preds.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="最新の予想", index=False)
             (hist if not hist.empty else pd.DataFrame({"日付": []})).to_excel(xw, sheet_name="購入履歴", index=False)
             (imp if not imp.empty else pd.DataFrame(columns=["予想方法", "特徴量", "重要度"])).to_excel(
