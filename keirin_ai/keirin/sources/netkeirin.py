@@ -113,6 +113,10 @@ def parse_entry(html: str, race_id: str) -> tuple[dict, list[dict]]:
         return None
 
     ix = {k: col(k) for k in ["車", "競走得点", "脚質", "逃げ", "まくり", "差し", "マ"]}
+    # S・H・B、着順の回数、勝率・連対率、ギヤ倍数（出走表に載るレース前の情報）
+    exact = {h: i for i, h in enumerate(heads)}
+    extra_cols = {"sb_s": "S", "sb_h": "H", "sb_b": "B", "n1": "1着", "n2": "2着", "n3": "3着", "nout": "着外",
+                  "win_rate": "勝率", "ren2": "2連対率", "ren3": "3連対率", "gear": "ギヤ倍数"}
     rows = []
     for tr in table.select("tr.PlayerList"):
         tds = tr.find_all("td", recursive=False)
@@ -134,6 +138,10 @@ def parse_entry(html: str, race_id: str) -> tuple[dict, list[dict]]:
             "km_sashi": cell("差し", _int), "km_mark": cell("マ", _int),
             "scratched": int("欠" in tr.get_text()),
         })
+        for k, label in extra_cols.items():
+            i = exact.get(label)
+            v = _float(tds[i].get_text(" ", strip=True).replace("%", "")) if i is not None and i < len(tds) else None
+            rows[-1][k] = v
     race["n_riders"] = len(rows)
     return race, rows
 

@@ -31,11 +31,20 @@ POS_RECORD_FEATURES = ["pos_n", "pos_win", "pos_top3", "pos_top3_diff"]
 # バンクの適性（保留中・比べてから決める）
 BANK_FEATURES = ["bank_cls", "straight_len", "bank_n", "bank_top3", "bank_top3_diff",
                  "venue_n", "venue_top3", "venue_top3_diff"]
+# 出走表の追加情報（保留中: 2026-11-20 の検証で予想のズレは少し良くなったが、
+# 人気どおりの買い目が増えて回収率は下がったため、本番の比較には入れていない）
+EXTRA_RAW = ["sb_s", "sb_h", "sb_b", "n1", "n2", "n3", "nout", "win_rate", "ren2", "ren3", "gear"]
+CARD_FEATURES = ["win_rate", "ren2", "ren3", "gear", "starts_4m", "s_rate", "h_rate", "b_rate",
+                 "win_rate_diff", "ren2_diff", "ren3_diff", "b_rate_rank", "s_rate_rank"]
 CATEGORICAL = ["pos_type", "race_class_code"]
 SCORE_FEATURE = "score_diff"   # 「機械学習＋競走得点」の比較用
 
 FEATURE_JA = {
     "jiriki": "自力度", "kimarite_n": "決まり手の合計回数", "pos_type": "今回の位置",
+    "win_rate": "勝率（出走表）", "ren2": "2連対率（出走表）", "ren3": "3連対率（出走表）", "gear": "ギヤ倍数",
+    "starts_4m": "出走表の出走数", "s_rate": "Sを取った率", "h_rate": "Hを取った率", "b_rate": "Bを取った率",
+    "win_rate_diff": "勝率−レース平均", "ren2_diff": "2連対率−レース平均", "ren3_diff": "3連対率−レース平均",
+    "b_rate_rank": "B率のレース内順位", "s_rate_rank": "S率のレース内順位",
     "pos_fit": "位置の適性", "pos_n": "同じ位置の過去出走数", "pos_win": "同じ位置での勝率",
     "pos_top3": "同じ位置での複勝率", "pos_top3_diff": "同じ位置での複勝率−全体の複勝率",
     "bank_cls": "バンクの周長（333/400/500）", "straight_len": "見なし直線の長さ",
@@ -257,6 +266,21 @@ def build_features(raw: pd.DataFrame, jiriki_threshold: float = 0.6, form_days: 
 
     # ---------- 比較用: 競走得点 ----------
     df["score_diff"] = df["score"] - df.groupby("race_id")["score"].transform("mean")
+
+    # ---------- 出走表の追加情報（S・H・B、勝率・連対率、ギヤ倍数）。開催前の時点の数字 ----------
+    for c in EXTRA_RAW:
+        df[c] = pd.to_numeric(df[c], errors="coerce") if c in df else np.nan
+    starts = df[["n1", "n2", "n3", "nout"]].sum(axis=1, min_count=4)
+    df["starts_4m"] = starts
+    df["s_rate"] = df["sb_s"] / starts.where(starts > 0)
+    df["h_rate"] = df["sb_h"] / starts.where(starts > 0)
+    df["b_rate"] = df["sb_b"] / starts.where(starts > 0)
+    rg = df.groupby("race_id")
+    df["win_rate_diff"] = df["win_rate"] - rg["win_rate"].transform("mean")
+    df["ren2_diff"] = df["ren2"] - rg["ren2"].transform("mean")
+    df["ren3_diff"] = df["ren3"] - rg["ren3"].transform("mean")
+    df["b_rate_rank"] = rg["b_rate"].rank(ascending=False, method="min")
+    df["s_rate_rank"] = rg["s_rate"].rank(ascending=False, method="min")
 
     # ---------- 答えの列 ----------
     f = df["finish"]

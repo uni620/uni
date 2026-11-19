@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS entries (
     km_makuri   INTEGER,
     km_sashi    INTEGER,
     km_mark     INTEGER,
+    sb_s REAL, sb_h REAL, sb_b REAL,     -- 出走表のS・H・B回数
+    n1 REAL, n2 REAL, n3 REAL, nout REAL, -- 出走表の1着・2着・3着・着外の回数
+    win_rate REAL, ren2 REAL, ren3 REAL, -- 出走表の勝率・2連対率・3連対率（%）
+    gear REAL,                           -- ギヤ倍数
     PRIMARY KEY (race_id, car_no)
 );
 CREATE TABLE IF NOT EXISTS odds (
@@ -101,6 +105,9 @@ CREATE INDEX IF NOT EXISTS idx_bets_status ON bets(status);
 """
 
 
+EXTRA_ENTRY_COLS = ["sb_s", "sb_h", "sb_b", "n1", "n2", "n3", "nout", "win_rate", "ren2", "ren3", "gear"]
+
+
 def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -115,10 +122,11 @@ class DB:
 
     def _migrate(self):
         """古いデータベースに新しい列を足す。"""
-        for table, col in [("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT"),
+        for table, col in ([("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT"),
                            ("entries", "km_nige INTEGER"), ("entries", "km_makuri INTEGER"),
                            ("entries", "km_sashi INTEGER"), ("entries", "km_mark INTEGER"),
-                           ("races", "bank_len REAL"), ("races", "straight_len REAL")]:
+                           ("races", "bank_len REAL"), ("races", "straight_len REAL")]
+                           + [("entries", f"{c} REAL") for c in EXTRA_ENTRY_COLS]):
             try:
                 self.con.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -146,7 +154,7 @@ class DB:
     def upsert_entries(self, rows: list[dict]):
         cols = ["race_id", "car_no", "rider_id", "name", "class_rank", "score", "style",
                 "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish", "kimarite",
-                "km_nige", "km_makuri", "km_sashi", "km_mark"]
+                "km_nige", "km_makuri", "km_sashi", "km_mark"] + EXTRA_ENTRY_COLS
         # 欠車（scratched）は結果ページで 1 になる。出走表を取り直しても 0 に戻さない
         sets = [f"{c}=COALESCE(excluded.{c}, {c})" for c in cols[2:] if c != "scratched"]
         sets.append("scratched=MAX(excluded.scratched, scratched)")
