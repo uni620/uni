@@ -108,6 +108,9 @@ def test_settle_won_lost_refund(tmp_path):
     db.upsert_race({"race_id": "R1", "date": "2026-01-01", "venue": "X", "race_no": 1})
     db.upsert_entries([{"race_id": "R1", "car_no": c, "rider_id": f"r{c}"} for c in (1, 2, 3, 4)])
     db.set_results("R1", {1: 1, 2: 2, 3: 3}, scratched=[4])
+    # 取得の再開で出走表を取り直しても、欠車の印は消えないこと
+    db.upsert_entries([{"race_id": "R1", "car_no": c, "rider_id": f"r{c}"} for c in (1, 2, 3, 4)])
+    assert db.con.execute("SELECT scratched FROM entries WHERE car_no=4").fetchone()[0] == 1
     db.upsert_payouts("R1", "2車複", {"1-2": 450})
     for combo in ("1-2", "1-3", "2-4"):
         db.con.execute("""INSERT INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, decided_at)

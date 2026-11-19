@@ -139,14 +139,16 @@ class DB:
         cols = ["race_id", "car_no", "rider_id", "name", "class_rank", "score", "style",
                 "age", "home", "line_id", "line_pos", "line_size", "scratched", "finish", "kimarite",
                 "km_nige", "km_makuri", "km_sashi", "km_mark"]
+        # 欠車（scratched）は結果ページで 1 になる。出走表を取り直しても 0 に戻さない
+        sets = [f"{c}=COALESCE(excluded.{c}, {c})" for c in cols[2:] if c != "scratched"]
+        sets.append("scratched=MAX(excluded.scratched, scratched)")
         for r in rows:
             d = {c: r.get(c) for c in cols}
             d["home"] = d["home"] or 0
             d["scratched"] = d["scratched"] or 0
             self.con.execute(
                 f"""INSERT INTO entries ({",".join(cols)}) VALUES ({",".join(":" + c for c in cols)})
-                    ON CONFLICT(race_id, car_no) DO UPDATE SET
-                    {",".join(f"{c}=COALESCE(excluded.{c}, {c})" for c in cols[2:])}""",
+                    ON CONFLICT(race_id, car_no) DO UPDATE SET {",".join(sets)}""",
                 d,
             )
 
