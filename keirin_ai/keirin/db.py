@@ -108,7 +108,7 @@ def now_str() -> str:
 class DB:
     def __init__(self, path: str | Path):
         self.path = str(path)
-        self.con = sqlite3.connect(self.path)
+        self.con = sqlite3.connect(self.path, timeout=60)  # 取得と朝の処理が重なっても待つ
         self.con.execute("PRAGMA foreign_keys = ON")
         self.con.executescript(SCHEMA)
         self._migrate()
