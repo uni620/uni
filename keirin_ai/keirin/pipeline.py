@@ -72,7 +72,7 @@ def features_for(db: DB, cfg: Config, until_date: str | None = None) -> pd.DataF
 
 
 def method_names(cfg: Config) -> list[str]:
-    return cfg.section("methods").get("compare", ["手作り7:3", "LightGBM", "LightGBM+競走得点"])
+    return cfg.section("methods").get("compare", ["手作り7:3", "LightGBM", "LightGBM+競走得点", "LightGBM+競走得点+位置バンク"])
 
 
 def train_methods(train_df: pd.DataFrame, names: list[str]) -> list:

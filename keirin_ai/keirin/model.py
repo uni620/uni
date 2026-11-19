@@ -15,7 +15,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from .features import CATEGORICAL, FEATURE_JA, FEATURES, SCORE_FEATURE
+from .features import BANK_FEATURES, CATEGORICAL, FEATURE_JA, FEATURES, POS_RECORD_FEATURES, SCORE_FEATURE
 
 TARGETS = {"win": "y_win", "top3": "y_top3", "pair": "y_pair"}
 
@@ -89,10 +89,13 @@ class HandScore:
 class LGBModel:
     """1着・3着以内・ライン2人そろって2着以内 の3つを、それぞれ LightGBM で学習する。"""
 
-    def __init__(self, use_score: bool = False, params: dict | None = None, num_rounds: int = 2000):
+    def __init__(self, use_score: bool = False, params: dict | None = None, num_rounds: int = 2000,
+                 pos_bank: bool = False):
         self.use_score = use_score
-        self.name = "LightGBM+競走得点" if use_score else "LightGBM"
-        self.features = FEATURES + ([SCORE_FEATURE] if use_score else [])
+        self.name = "LightGBM" + ("+競走得点" if use_score else "") + ("+位置バンク" if pos_bank else "")
+        # pos_bank: 「同じ位置・同じバンクでの過去の成績」も使う版（試験中。本番の仮想購入で並べて比べる）
+        self.features = (FEATURES + ([SCORE_FEATURE] if use_score else [])
+                         + (POS_RECORD_FEATURES + BANK_FEATURES if pos_bank else []))
         self.params = {**LGB_PARAMS, **(params or {})}
         self.num_rounds = num_rounds
         self.boosters: dict = {}
@@ -156,7 +159,8 @@ class LGBModel:
 
 def make_methods(names: list[str]) -> list:
     table = {"手作り7:3": lambda: HandScore(), "LightGBM": lambda: LGBModel(False),
-             "LightGBM+競走得点": lambda: LGBModel(True)}
+             "LightGBM+競走得点": lambda: LGBModel(True),
+             "LightGBM+競走得点+位置バンク": lambda: LGBModel(True, pos_bank=True)}
     return [table[n]() for n in names if n in table]
 
 

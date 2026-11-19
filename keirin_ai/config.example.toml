@@ -29,7 +29,8 @@ race_names_csv = "race_names.csv"  # レース名→格 の対応表（列: race
 
 [methods]
 # 比べる予想方法（設計書「比べる相手」）。人気順は使わない方針。
-compare = ["手作り7:3", "LightGBM", "LightGBM+競走得点"]
+# 「+位置バンク」は同じ位置・同じバンクでの過去の成績も使う試験版（2026-11-20から本番で並べて比較）
+compare = ["手作り7:3", "LightGBM", "LightGBM+競走得点", "LightGBM+競走得点+位置バンク"]
 
 [model]
 min_train_races = 300        # 本番（daily）で学習するのに必要な最低レース数

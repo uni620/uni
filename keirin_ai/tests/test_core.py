@@ -152,7 +152,7 @@ def test_end_to_end_evaluate_and_report(cfg):
             pipeline.ingest_odds(db, src, race)
             pipeline.ingest_result(db, src, race)
     table = pipeline.evaluate_split(db, cfg, test_frac=0.25, out_json=cfg.base / "e.json")
-    assert set(table["予想方法"]) == {"手作り7:3", "LightGBM", "LightGBM+競走得点"}
+    assert set(table["予想方法"]) == {"手作り7:3", "LightGBM", "LightGBM+競走得点", "LightGBM+競走得点+位置バンク"}
     # 判断はレース前のオッズだけ
     assert db.con.execute("SELECT COUNT(*) FROM bets WHERE odds_final=1").fetchone()[0] == 0
     # 検証期間より前のレースには仮想購入していない
