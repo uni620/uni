@@ -69,7 +69,8 @@ def _toy():
             rows.append({"race_id": rid, "car_no": car, "rider_id": r, "date": d, "venue": "X", "race_no": 1,
                          "grade": "F1", "race_name": name, "race_class": "S級", "line_id": 1 if r != "c" else 2,
                          "line_pos": pos, "line_size": 2 if r != "c" else 1, "scratched": 0,
-                         "finish": fin[r], "kimarite": km.get(r), "score": 100.0})
+                         "finish": fin[r], "kimarite": km.get(r), "score": 100.0,
+                         "bank_len": 400.0, "straight_len": 56.0})
     return pd.DataFrame(rows)
 
 
@@ -98,6 +99,11 @@ def test_features_use_only_past():
     assert f.loc[("2025-01-03", "a"), "pos_n"] == 2
     assert f.loc[("2025-01-03", "a"), "pos_win"] == pytest.approx((1 + 3 * 0.5) / (2 + 3))
     assert f.loc[("2025-01-03", "a"), "pos_top3"] == 1.0
+    # バンクの適性: 同じ 400m バンク・同じ競輪場で 2 走（1着・2着）
+    assert f.loc[("2025-01-03", "a"), "bank_cls"] == 1
+    assert f.loc[("2025-01-03", "a"), "bank_n"] == 2
+    assert f.loc[("2025-01-03", "a"), "venue_top3"] == 1.0
+    assert np.isnan(f.loc[("2025-01-01", "a"), "venue_top3"])
     # 格の差: 普段（予選2.2, 準決勝5.2 の平均）− 今回（決勝6.2）
     assert f.loc[("2025-01-03", "a"), "kaku_diff"] == pytest.approx((2.2 + 5.2) / 2 - 6.2)
 
@@ -221,3 +227,13 @@ def test_race_name_split_and_kimarite():
     ids, venues = parse_race_list('<li id="btn_jyoname_28"><a>立川<span class="Icon_Grade">GIII</span></a></li>'
                                   '<a href="x?race_id=202601012801">1R</a>')
     assert ids == ["202601012801"] and venues == {"28": {"venue": "立川", "grade": "G3"}}
+
+
+def test_bank_length_parsed_from_entry_page():
+    from keirin.sources.netkeirin import parse_entry
+    for text, bank, straight in [("周長距離は400メートル。見なし直線は56.9メートル。", 400, 56.9),
+                                 ("周長距離が500から400メートルに変更された。ただ、見なし直線は60.3メートルと長め", 400, 60.3),
+                                 ("周長距離は1周400メートル。見なし直線は40.2メートル", 400, 40.2),
+                                 ("周長距離は500メートル。見なし直線は52mと比較的短い。", 500, 52.0)]:
+        race, _ = parse_entry(f"<html><title>X競輪</title><body><p>{text}</p></body></html>", "202611190101")
+        assert (race["bank_len"], race["straight_len"]) == (bank, straight)

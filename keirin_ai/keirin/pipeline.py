@@ -193,7 +193,9 @@ def evaluate_split(db: DB, cfg: Config, test_frac: float = 0.22, allow_final_odd
     table = pd.DataFrame(rows)
 
     db.con.execute("DELETE FROM bets WHERE mode='backtest'")
-    db.con.execute("DELETE FROM predictions")
+    # 検証期間のレースの予想だけ消す（本番＝今日以降の予想は残す）
+    test_ids = test["race_id"].unique().tolist()
+    db.con.executemany("DELETE FROM predictions WHERE race_id=?", [(r,) for r in test_ids])
     db.commit()
     main = next((m.name for m in methods if isinstance(m, LGBModel) and not m.use_score), None)
     n = predict_and_bet(db, cfg, methods, feats, test["race_id"].unique().tolist(), "backtest",

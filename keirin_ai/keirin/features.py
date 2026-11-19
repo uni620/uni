@@ -28,6 +28,9 @@ FEATURES = [
 # 2026-11-19 に 925 レースで比べたところ 1着率はほぼ変わらなかった（LightGBM 43.9%→43.9%）。
 # 過去データが少なく、同じ位置の過去出走が平均約7回しかないため。データが増えたら FEATURES に足して比べ直す。
 POS_RECORD_FEATURES = ["pos_n", "pos_win", "pos_top3", "pos_top3_diff"]
+# バンクの適性（保留中・比べてから決める）
+BANK_FEATURES = ["bank_cls", "straight_len", "bank_n", "bank_top3", "bank_top3_diff",
+                 "venue_n", "venue_top3", "venue_top3_diff"]
 CATEGORICAL = ["pos_type", "race_class_code"]
 SCORE_FEATURE = "score_diff"   # 「機械学習＋競走得点」の比較用
 
@@ -35,6 +38,9 @@ FEATURE_JA = {
     "jiriki": "自力度", "kimarite_n": "決まり手の合計回数", "pos_type": "今回の位置",
     "pos_fit": "位置の適性", "pos_n": "同じ位置の過去出走数", "pos_win": "同じ位置での勝率",
     "pos_top3": "同じ位置での複勝率", "pos_top3_diff": "同じ位置での複勝率−全体の複勝率",
+    "bank_cls": "バンクの周長（333/400/500）", "straight_len": "見なし直線の長さ",
+    "bank_n": "同じ周長の過去出走数", "bank_top3": "同じ周長での複勝率", "bank_top3_diff": "同じ周長での複勝率−全体",
+    "venue_n": "同じ競輪場の過去出走数", "venue_top3": "同じ競輪場での複勝率", "venue_top3_diff": "同じ競輪場での複勝率−全体",
 "line_gap": "ラインの力量差", "other_senko_n": "ほかのラインの先行選手の数",
     "recent_finish": "直近の大会の着順（平均）", "is_current_meet": "どちらの大会か（今大会=1）",
     "days_since_prev": "前大会からの日数", "win_3m": "3か月の勝率", "top2_3m": "3か月の連対率",
@@ -88,6 +94,31 @@ def assign_meets(df: pd.DataFrame) -> pd.Series:
     return df.merge(days, on=["venue", "date"], how="left")["meet_id"].to_numpy()
 
 
+class _Record:
+    """「今回と同じ条件（位置・バンクなど）」で過去に走ったときの成績。自分より前のレースだけを数える。
+    回数が少ないとブレるので、その選手の全体の成績に POS_PRIOR 走分だけ寄せて補正する。"""
+
+    def __init__(self, df: pd.DataFrame, fin: pd.Series, valid: pd.Series):
+        self.rider = df["rider_id"]
+        self.ok = valid.astype(float)
+        self.w = (fin == 1).astype(float).where(valid, 0.0)
+        self.t3 = (fin <= 3).astype(float).where(valid, 0.0)
+        g = lambda s: s.groupby(self.rider).cumsum() - s
+        self.an = g(self.ok)
+        self.all_win = (g(self.w) / self.an).where(self.an > 0)
+        self.all_t3 = (g(self.t3) / self.an).where(self.an > 0)
+
+    def by(self, key: pd.Series):
+        """(同じ条件の過去出走数, 補正した勝率, 補正した複勝率, 複勝率−全体の複勝率) を返す。"""
+        k = key.astype(object).where(key.notna(), "_na")
+        c = lambda s: s.groupby([self.rider, k], sort=False).cumsum() - s
+        n, w, t3 = c(self.ok), c(self.w), c(self.t3)
+        has = (self.an > 0) & key.notna()
+        win = ((w + POS_PRIOR * self.all_win) / (n + POS_PRIOR)).where(has)
+        top3 = ((t3 + POS_PRIOR * self.all_t3) / (n + POS_PRIOR)).where(has)
+        return n.where(key.notna()), win, top3, top3 - self.all_t3
+
+
 def build_features(raw: pd.DataFrame, jiriki_threshold: float = 0.6, form_days: int = 90,
                    trend_races: int = 4, kaku_overrides: dict | None = None) -> pd.DataFrame:
     if raw.empty:
@@ -127,24 +158,15 @@ def build_features(raw: pd.DataFrame, jiriki_threshold: float = 0.6, form_days: 
                               default=np.nan)
 
     # 位置ごとの実績: 過去に「今回と同じ位置」を走ったときの成績（勝率・複勝率を位置別に分けて見る）
-    # 回数が少ないとブレるので、その選手の全体の成績に寄せて補正する（POS_PRIOR 走分の重み）
-    w = (fin == 1).astype(float).where(valid, 0.0)
-    t3 = (fin <= 3).astype(float).where(valid, 0.0)
-    ok = valid.astype(float)
-    gp = pd.DataFrame({"r": df["rider_id"], "p": df["pos_type"], "ok": ok, "w": w, "t3": t3}) \
-        .groupby(["r", "p"], sort=False)
-    pn = gp["ok"].cumsum() - ok                   # 自分より前のレースだけ
-    pw = gp["w"].cumsum() - w
-    pt3 = gp["t3"].cumsum() - t3
-    an = ok.groupby(df["rider_id"]).cumsum() - ok
-    aw = w.groupby(df["rider_id"]).cumsum() - w
-    at3 = t3.groupby(df["rider_id"]).cumsum() - t3
-    all_win = (aw / an).where(an > 0)
-    all_t3 = (at3 / an).where(an > 0)
-    df["pos_n"] = pn
-    df["pos_win"] = ((pw + POS_PRIOR * all_win) / (pn + POS_PRIOR)).where(an > 0)
-    df["pos_top3"] = ((pt3 + POS_PRIOR * all_t3) / (pn + POS_PRIOR)).where(an > 0)
-    df["pos_top3_diff"] = df["pos_top3"] - all_t3
+    rec = _Record(df, fin, valid)
+    df["pos_n"], df["pos_win"], df["pos_top3"], df["pos_top3_diff"] = rec.by(df["pos_type"])
+
+    # バンクの適性: 同じ周長（333/400/500m）・同じ競輪場での過去の成績
+    bank = pd.to_numeric(df["bank_len"], errors="coerce") if "bank_len" in df else pd.Series(np.nan, index=df.index)
+    df["bank_cls"] = np.select([bank <= 340, bank < 450, bank >= 450], [0, 1, 2], default=np.nan)
+    df["straight_len"] = pd.to_numeric(df["straight_len"], errors="coerce") if "straight_len" in df else np.nan
+    df["bank_n"], _, df["bank_top3"], df["bank_top3_diff"] = rec.by(df["bank_cls"])
+    df["venue_n"], _, df["venue_top3"], df["venue_top3_diff"] = rec.by(df["venue"])
 
     # ---------- 3 強さ（今大会・前大会の着順） ----------
     df["_fin"] = fin

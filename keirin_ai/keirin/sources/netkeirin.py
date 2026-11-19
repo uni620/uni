@@ -97,6 +97,12 @@ def parse_entry(html: str, race_id: str) -> tuple[dict, list[dict]]:
         "race_class": race_class,
         "start_time": m.group(1).zfill(5) if m else None,
     }
+    # バンク: 「周長距離は400メートル。見なし直線は56.9メートル。」（場によって書き方が少し違う）
+    txt = s.get_text(" ", strip=True)
+    b = re.search(r"周長距離[^。]*?(\d{3})\s*(?:メートル|m|ｍ)", txt)
+    st = re.search(r"見なし直線[はもが]?\s*([\d.]+)\s*(?:メートル|m|ｍ)", txt)
+    race["bank_len"] = float(b.group(1)) if b else None
+    race["straight_len"] = float(st.group(1)) if st else None
     table = s.select_one("#RaceCard_Table_Fixed") or s
     heads = [th.get_text("", strip=True) for th in table.select("tr.Header th")]
 

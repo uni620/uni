@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS races (
     race_class  TEXT,               -- S級/A級/A級チャレンジ/ガールズ
     start_time  TEXT,               -- HH:MM（分からなければ空）
     n_riders    INTEGER,
-    has_result  INTEGER DEFAULT 0
+    has_result  INTEGER DEFAULT 0,
+    bank_len    REAL,               -- バンクの周長（m）
+    straight_len REAL               -- 見なし直線（m）
 );
 CREATE TABLE IF NOT EXISTS entries (
     race_id     TEXT NOT NULL,
@@ -115,7 +117,8 @@ class DB:
         """古いデータベースに新しい列を足す。"""
         for table, col in [("races", "race_name TEXT"), ("races", "race_class TEXT"), ("entries", "kimarite TEXT"),
                            ("entries", "km_nige INTEGER"), ("entries", "km_makuri INTEGER"),
-                           ("entries", "km_sashi INTEGER"), ("entries", "km_mark INTEGER")]:
+                           ("entries", "km_sashi INTEGER"), ("entries", "km_mark INTEGER"),
+                           ("races", "bank_len REAL"), ("races", "straight_len REAL")]:
             try:
                 self.con.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -127,12 +130,17 @@ class DB:
     # ---------- 書き込み ----------
     def upsert_race(self, r: dict):
         self.con.execute(
-            """INSERT INTO races (race_id, date, venue, race_no, grade, race_name, race_class, start_time, n_riders)
-               VALUES (:race_id, :date, :venue, :race_no, :grade, :race_name, :race_class, :start_time, :n_riders)
+            """INSERT INTO races (race_id, date, venue, race_no, grade, race_name, race_class, start_time, n_riders,
+                                  bank_len, straight_len)
+               VALUES (:race_id, :date, :venue, :race_no, :grade, :race_name, :race_class, :start_time, :n_riders,
+                       :bank_len, :straight_len)
                ON CONFLICT(race_id) DO UPDATE SET
                  grade=excluded.grade, race_name=excluded.race_name, race_class=excluded.race_class,
-                 start_time=excluded.start_time, n_riders=excluded.n_riders""",
-            {"grade": None, "race_name": None, "race_class": None, "start_time": None, "n_riders": None, **r},
+                 start_time=excluded.start_time, n_riders=excluded.n_riders,
+                 bank_len=COALESCE(excluded.bank_len, bank_len),
+                 straight_len=COALESCE(excluded.straight_len, straight_len)""",
+            {"grade": None, "race_name": None, "race_class": None, "start_time": None, "n_riders": None,
+             "bank_len": None, "straight_len": None, **r},
         )
 
     def upsert_entries(self, rows: list[dict]):
@@ -184,7 +192,8 @@ class DB:
         return pd.read_sql_query(sql, self.con, params=params)
 
     def entries_with_race(self, until_date: str | None = None, dates: list[str] | None = None) -> pd.DataFrame:
-        sql = """SELECT e.*, r.date, r.venue, r.race_no, r.grade, r.race_name, r.race_class, r.start_time, r.has_result
+        sql = """SELECT e.*, r.date, r.venue, r.race_no, r.grade, r.race_name, r.race_class, r.start_time, r.has_result,
+                        r.bank_len, r.straight_len
                  FROM entries e JOIN races r USING (race_id)"""
         params: list = []
         if until_date:
