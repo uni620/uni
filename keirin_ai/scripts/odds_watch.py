@@ -63,6 +63,9 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
     for name, mfile, use_line, th, mx in RULES:
         if use_line and lp is None:
             continue
+        if db.con.execute("SELECT 1 FROM bets WHERE mode='live' AND race_id=? AND strategy=?",
+                          (race["race_id"], name)).fetchone():
+            continue                                   # 再起動などで同じレースを2回判定しない
         if mfile not in _MODELS:
             _MODELS[mfile] = pd.read_pickle(ROOT / "data" / "market_models" / mfile)
         tab = market_table(odds, len(cars), lp if use_line else None)
