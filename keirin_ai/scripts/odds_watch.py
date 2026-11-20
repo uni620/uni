@@ -47,6 +47,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in ent.itertuples() if pd.notna(r.line_id)}
         lp = line_combo_probs(cars, [wp[c] for c in cars], lines)
     n = 0
+    picks: list[str] = []
     for name, mfile, use_line, th, mx in RULES:
         if use_line and lp is None:
             continue
@@ -64,7 +65,12 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
             ("live", race["race_id"], race["date"], name, b["bt"], b["combo"], 100, float(b["pm"]),
              float(b["odds"]), 0, float(b["ev"]), ts))
         n += cur.rowcount
+        picks.append(f"{name}:{b['bt']}{b['combo']} {b['odds']}倍 EV{b['ev']:.2f}")
     db.commit()
+    if picks:
+        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|" + " / ".join(picks), flush=True)
+    elif lp is not None or True:
+        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り（基準以上の目なし）", flush=True)
     return n
 
 MARKS = (10, 3)          # 発走の何分前に取るか
