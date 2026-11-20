@@ -255,3 +255,26 @@ def test_trio_shift_filtered_and_min_odds():
     assert filtered_bets(bets, "A級チャレンジ", cfg) == []
     assert min_odds(0.2) == 6.0 and min_odds(0.2, 1.0) == 5.0 and min_odds(None) is None
     assert min_odds(0.387, 1.0, "3連複") == round(1 / 0.178, 1)   # 3連複は実際の的中率に直す
+
+
+def test_skip_overconfident_and_parse_market():
+    from bs4 import BeautifulSoup
+    from keirin.sources.netkeirin import parse_market
+    from keirin.strategy import skip_overconfident
+    cfg = {"bet_types": ["2車複", "2車単", "3連複"], "stake": 100}
+    cars, wp = [1, 2, 3, 4, 5], [0.4, 0.25, 0.15, 0.12, 0.08]
+    bets = decide_bets("M", cars, wp, {}, {}, cfg)
+    # AIの1番手(1番車 40%)が1番人気で、市場の支持率 30% より強気 → 買わない
+    assert skip_overconfident(bets, cars, wp, {"fav1": 1, "sup1": 0.30}, "A級", cfg) == []
+    # 市場の方が強気(50%) → 本命と同じ買い目を記録
+    s = skip_overconfident(bets, cars, wp, {"fav1": 1, "sup1": 0.50}, "A級", cfg)
+    assert len(s) == 3 and all(b["strategy"] == "M・強気見送り" for b in s)
+    # 1番人気が別の選手 → 記録
+    assert len(skip_overconfident(bets, cars, wp, {"fav1": 2, "sup1": 0.30}, "A級", cfg)) == 3
+    # チャレンジ・人気情報なし → 記録しない
+    assert skip_overconfident(bets, cars, wp, {"fav1": 2, "sup1": 0.3}, "A級チャレンジ", cfg) == []
+    assert skip_overconfident(bets, cars, wp, None, "A級", cfg) == []
+    html = """<table class="OddsRateTable01"><tr><th>3連単 1番人気</th><td>1着 4</td><td>2着 1</td><td>3着 7</td>
+              <td>5.3</td></tr><tr><th>支持率</th><td>45.2%</td><td>30.1%</td><td>25.0%</td></tr></table>"""
+    m = parse_market(BeautifulSoup(html, "html.parser"))
+    assert m == {"mkt_fav1": 4, "mkt_fav_odds": 5.3, "mkt_sup1": pytest.approx(0.452)}

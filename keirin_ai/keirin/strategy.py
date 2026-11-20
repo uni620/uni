@@ -64,6 +64,27 @@ def filtered_bets(bets: list[dict], race_class: str | None, cfg: dict) -> list[d
             for b in bets if b["strategy"].endswith("・本命") and b["bet_type"] in keep]
 
 
+def skip_overconfident(bets: list[dict], cars: list[int], win_probs, market: dict | None,
+                       race_class: str | None, cfg: dict) -> list[dict]:
+    """「〇〇・強気見送り」: 本命と同じ買い目。ただし次のレースは買わない。
+    - AIの1番手が1番人気と同じで、AIの1着確率 > 市場の支持率（AIが人気以上に強気）
+    - A級チャレンジ
+    - 人気の情報が無いレース（比べられないので記録しない）
+    9/23〜11/17 の検証で、AIが強気のレースは3つの予想方法×3券種すべてで回収率が悪かった（59〜81%）。
+    人気は買うかどうかの判断だけに使い、予想そのものには入れない。"""
+    f = cfg.get("skip_overconfident", {})
+    if not f.get("enabled", True) or not market or market.get("sup1") is None:
+        return []
+    if race_class in f.get("skip_race_class", ["A級チャレンジ"]):
+        return []
+    import numpy as np
+    i = int(np.argmax(win_probs))
+    if int(cars[i]) == int(market["fav1"]) and float(win_probs[i]) > float(market["sup1"]) + f.get("margin", 0.0):
+        return []
+    return [{**b, "strategy": b["strategy"].replace("・本命", "・強気見送り")}
+            for b in bets if b["strategy"].endswith("・本命")]
+
+
 # 3連複の確率は高いほど出しすぎになる（ハービル式の癖）。9/23〜11/19 の約1.6万点で測った実際の的中率に直す。
 # 2車単・2車複はほぼ合っていた（AI 25%→実際24〜27%）ので直さない。
 TRIO_CALIB = ([0, .043, .068, .099, .153, .241, .387, 1.0], [0, .043, .067, .086, .115, .140, .178, .25])

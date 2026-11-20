@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS predictions (
     created_at  TEXT NOT NULL,
     PRIMARY KEY (race_id, car_no)
 );
+-- 出走表ページに載る「3連単1番人気」の情報。買うかどうかの判断だけに使い、予想（AI）には入れない。
+-- 最初に取った値を残す（本番では朝の値）。
+CREATE TABLE IF NOT EXISTS market (
+    race_id     TEXT PRIMARY KEY,
+    fav1        INTEGER,   -- 3連単1番人気の1着の車番
+    fav_odds    REAL,      -- そのオッズ
+    sup1        REAL,      -- 1着の支持率（0〜1）
+    fetched_at  TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_races_date ON races(date);
 CREATE INDEX IF NOT EXISTS idx_entries_rider ON entries(rider_id);
 CREATE INDEX IF NOT EXISTS idx_bets_status ON bets(status);
@@ -185,6 +194,17 @@ class DB:
             "INSERT OR REPLACE INTO odds VALUES (?,?,?,?,?,?)",
             [(race_id, bet_type, c, float(o), ts, int(is_final)) for c, o in odds.items()],
         )
+
+    def insert_market(self, race_id: str, fav1: int | None, fav_odds: float | None, sup1: float | None,
+                      fetched_at: str | None = None):
+        if fav1 is None or sup1 is None:
+            return
+        self.con.execute("INSERT OR IGNORE INTO market VALUES (?,?,?,?,?)",
+                         (race_id, int(fav1), fav_odds, float(sup1), fetched_at or now_str()))
+
+    def market(self, race_id: str) -> dict | None:
+        r = self.con.execute("SELECT fav1, fav_odds, sup1 FROM market WHERE race_id=?", (race_id,)).fetchone()
+        return {"fav1": r[0], "fav_odds": r[1], "sup1": r[2]} if r else None
 
     def upsert_payouts(self, race_id: str, bet_type: str, payouts: dict[str, int]):
         self.con.executemany(

@@ -16,7 +16,7 @@ from .features import build_features
 from .model import LGBModel, evaluate, make_methods
 from .race_grade import load_overrides
 from .sources.base import OddsSnapshot, Source
-from .strategy import decide_baseline, decide_bets, filtered_bets
+from .strategy import decide_baseline, decide_bets, filtered_bets, skip_overconfident
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ def ingest_cards(db: DB, source: Source, date: str) -> list[dict]:
     for c in cards:
         db.upsert_race(c.race)
         db.upsert_entries(c.entries)
+        db.insert_market(c.race["race_id"], c.race.get("mkt_fav1"), c.race.get("mkt_fav_odds"), c.race.get("mkt_sup1"))
     db.commit()
     log.info("%s: 出走表 %dレース", date, len(cards))
     return [c.race for c in cards]
@@ -116,6 +117,7 @@ def predict_and_bet(db: DB, cfg: Config, methods: list, feats: pd.DataFrame, rac
             mb = decide_bets(name, cars, wp, odds_by_type, final_flags, scfg,
                              ccfg.get("lambda2", 1.0), ccfg.get("lambda3", 1.0))
             bets += mb + filtered_bets(mb, row.get("race_class"), scfg)
+            bets += skip_overconfident(mb, cars, wp, db.market(rid), row.get("race_class"), scfg)
         if save_predictions_of and save_predictions_of in preds:
             p = preds[save_predictions_of]
             for car, pw in zip(g["car_no"], p.loc[g.index, "p_win"]):

@@ -143,7 +143,28 @@ def parse_entry(html: str, race_id: str) -> tuple[dict, list[dict]]:
             v = _float(tds[i].get_text(" ", strip=True).replace("%", "")) if i is not None and i < len(tds) else None
             rows[-1][k] = v
     race["n_riders"] = len(rows)
+    race.update(parse_market(s))
     return race, rows
+
+
+def parse_market(s: BeautifulSoup) -> dict:
+    """出走表の「3連単1番人気」表 → 1着の車番・オッズ・1着の支持率。無ければ空。"""
+    t = s.select_one("table.OddsRateTable01")
+    if t is None:
+        return {}
+    out = {}
+    for tr in t.select("tr"):
+        cells = [x.get_text(" ", strip=True) for x in tr.find_all(["th", "td"])]
+        if not cells:
+            continue
+        if "1番人気" in cells[0]:
+            m = re.search(r"着\s*(\d+)", cells[1]) if len(cells) > 1 else None
+            out["mkt_fav1"] = int(m.group(1)) if m else None
+            out["mkt_fav_odds"] = _float(cells[4].replace(",", "")) if len(cells) > 4 else None
+        if cells[0] == "支持率" and len(cells) > 1 and cells[1].endswith("%"):
+            out["mkt_sup1"] = _float(cells[1].rstrip("%"))
+            out["mkt_sup1"] = out["mkt_sup1"] / 100 if out["mkt_sup1"] is not None else None
+    return out
 
 
 def parse_narabi(html: str) -> list[list[int]]:
