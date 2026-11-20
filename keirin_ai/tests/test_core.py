@@ -297,3 +297,20 @@ def test_kdreams_id_and_parse():
     assert kd.check_page(info, {"date": "2026-11-20", "race_no": 9, "venue": "西武園"})
     assert not kd.check_page(info, {"date": "2026-11-19", "race_no": 9, "venue": "西武園"})
     assert kd.check_page({"title": "西武園競輪 レース詳細 | 杯 4R Ａ級 | 2026年11月01日"}, {"date": "2026-11-01", "race_no": 4, "venue": "西武園"})
+
+
+def test_line_combos_harville_and_line_effect():
+    import numpy as np
+    from keirin.combos import combo_probs
+    from keirin.line_combos import HARVILLE_PARAMS, line_combo_probs
+    cars = [1, 2, 3, 4, 5, 6, 7]
+    p = np.array([.3, .2, .15, .1, .1, .1, .05])
+    lines = {5: (1, 1, 3), 7: (1, 2, 3), 2: (1, 3, 3), 1: (2, 1, 2), 3: (2, 2, 2), 4: (3, 1, 2), 6: (3, 2, 2)}
+    h = line_combo_probs(cars, p, lines, HARVILLE_PARAMS)
+    b = combo_probs(cars, p)
+    assert all(abs(h["3連複"][k] - b["3連複"][k]) < 1e-12 for k in b["3連複"])
+    ln = line_combo_probs(cars, p, lines)
+    for bt in ("2車複", "2車単", "3連複"):
+        assert abs(sum(ln[bt].values()) - 1) < 1e-9
+    # 先頭5が勝つなら番手7が来やすい: 5-7 は ハービルより高く
+    assert ln["2車複"]["5-7"] > b["2車複"]["5-7"] * 1.5

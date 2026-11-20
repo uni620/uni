@@ -21,8 +21,10 @@ def _bet(strategy, bt, combo, stake, prob, od, final):
 
 
 def decide_bets(method: str, cars: list[int], win_probs, odds_by_type: dict[str, dict[str, float]],
-                odds_is_final: dict[str, bool], cfg: dict, lambda2: float = 1.0, lambda3: float = 1.0) -> list[dict]:
-    probs = combo_probs(cars, win_probs, lambda2, lambda3)
+                odds_is_final: dict[str, bool], cfg: dict, lambda2: float = 1.0, lambda3: float = 1.0,
+                probs: dict | None = None) -> list[dict]:
+    """probs を渡すと、その組み合わせ確率を使う（ライン連動など）。無ければハービル式で作る。"""
+    probs = probs or combo_probs(cars, win_probs, lambda2, lambda3)
     stake = int(cfg.get("stake", 100))
     out: list[dict] = []
     for bt in cfg.get("bet_types", ["2車複", "2車単", "3連複"]):

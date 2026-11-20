@@ -61,3 +61,10 @@ baseline_enabled = false
 [schedule]
 # predict を実行したとき、発走まで何分以内のレースを対象にするか
 predict_window_min = 40
+
+[line_linked]
+# ライン連動: 1着の確率は base の予想のまま、2・3着を「先頭が勝てば番手が来やすい」などラインのつながりで決める。
+# 今までの予想（ハービル式）とは別の名前で記録して比べる。係数は keirin/line_combos.py の DEFAULT_PARAMS。
+enabled = true
+base = "LightGBM+競走得点"
+name = "ライン連動"

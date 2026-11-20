@@ -16,6 +16,7 @@ from .features import build_features
 from .model import LGBModel, evaluate, make_methods
 from .race_grade import load_overrides
 from .sources.base import OddsSnapshot, Source
+from .line_combos import line_combo_probs
 from .strategy import decide_baseline, decide_bets, filtered_bets, skip_overconfident
 
 log = logging.getLogger(__name__)
@@ -118,6 +119,14 @@ def predict_and_bet(db: DB, cfg: Config, methods: list, feats: pd.DataFrame, rac
                              ccfg.get("lambda2", 1.0), ccfg.get("lambda3", 1.0))
             bets += mb + filtered_bets(mb, row.get("race_class"), scfg)
             bets += skip_overconfident(mb, cars, wp, db.market(rid), row.get("race_class"), scfg)
+        # ライン連動: 1着の確率は base の予想のまま、2・3着をラインのつながりで決める（今までの予想とは別に記録）
+        lcfg = cfg.section("line_linked")
+        if lcfg.get("enabled", True) and lcfg.get("base", "LightGBM+競走得点") in preds:
+            wp = preds[lcfg.get("base", "LightGBM+競走得点")].loc[g.index, "p_win"].to_numpy()
+            lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in g.itertuples()
+                     if pd.notna(getattr(r, "line_id", None))}
+            probs = line_combo_probs(cars, wp, lines)
+            bets += decide_bets(lcfg.get("name", "ライン連動"), cars, wp, odds_by_type, final_flags, scfg, probs=probs)
         if save_predictions_of and save_predictions_of in preds:
             p = preds[save_predictions_of]
             for car, pw in zip(g["car_no"], p.loc[g.index, "p_win"]):
