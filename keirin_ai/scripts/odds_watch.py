@@ -26,11 +26,12 @@ import pandas as pd  # noqa: E402
 
 DECIDE_MARK = 3          # この時点（発走3分前）のオッズで仮想購入を決める
 LINE_BASE = "LightGBM+競走得点"
-# (記録名, モデルファイル, ライン連動を使うか, 期待値の基準)。ルールは 2026-11-20 に固定（事前登録）。
-RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1),
-         ("オッズ1点・EV1.2", "odds_only_v1.pkl", False, 1.2),
-         ("オッズ+ライン1点・EV1.1", "odds_line_v1.pkl", True, 1.1),
-         ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2)]
+# (記録名, モデルファイル, ライン連動を使うか, 期待値の基準, オッズ上限)。ルールは 2026-11-20 に固定（事前登録）。
+RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
+         ("オッズ1点・EV1.2", "odds_only_v1.pkl", False, 1.2, 30),
+         ("オッズ+ライン1点・EV1.1", "odds_line_v1.pkl", True, 1.1, 30),
+         ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2, 30),
+         ("オッズ1点・10倍以下EV1.1", "odds_only_v1.pkl", False, 1.1, 10)]   # 11/20 追加: 的中が多くブレが小さい
 _MODELS: dict = {}
 
 
@@ -46,7 +47,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in ent.itertuples() if pd.notna(r.line_id)}
         lp = line_combo_probs(cars, [wp[c] for c in cars], lines)
     n = 0
-    for name, mfile, use_line, th in RULES:
+    for name, mfile, use_line, th, mx in RULES:
         if use_line and lp is None:
             continue
         if mfile not in _MODELS:
@@ -54,7 +55,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         tab = market_table(odds, len(cars), lp if use_line else None)
         if tab is None:
             return n
-        b = one_bet(apply_model(tab, _MODELS[mfile]), th)
+        b = one_bet(apply_model(tab, _MODELS[mfile]), th, mx)
         if b is None:
             continue
         cur = db.con.execute(
