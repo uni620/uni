@@ -1,5 +1,5 @@
 """今日のレースの「締切前オッズ」を Kドリームスから記録する（発走の約10分前と約3分前の2回）。
-7分前のオッズで、1レース1点ルール（keirin/market_model.py）の仮想購入も記録する。
+3分前のオッズで、1レース1点ルール（keirin/market_model.py）の仮想購入も記録する。
 
 - 検証用: 確定オッズで見つけた傾向が、実際に買える時点のオッズでも残るかを確かめる。
 - 個人で使うだけ。取ったデータは GitHub などに置かない（data/ は git の対象外）。
@@ -24,7 +24,7 @@ from keirin.market_model import apply_model, market_table, one_bet  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
-DECIDE_MARK = 7          # この時点（発走7分前）のオッズで仮想購入を決める（締切に間に合うように）
+DECIDE_MARK = 3          # この時点（発走3分前）のオッズで仮想購入を決める（締切に間に合うように）
 LINE_BASE = "LightGBM+競走得点"
 # (記録名, モデルファイル, ライン連動を使うか, 期待値の基準, オッズ上限)。ルールは 2026-11-20 に固定（事前登録）。
 RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
@@ -91,7 +91,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り {near}|{yoso}", flush=True)
     return n
 
-MARKS = (10, 7, 3)       # 発走の何分前に取るか（3分前はオッズの動きを見る記録用）
+MARKS = (10, 7, 3)       # 発走の何分前に取るか（7分前はオッズの動きを見る記録用）
 LATE_OK = 1.5            # 予定時刻から何分遅れまでなら取りにいくか（発走前に限る）
 
 
