@@ -153,7 +153,7 @@ def check_page(info: dict, race: dict) -> bool:
     t = info.get("title", "")
     d = race["date"]
     dates = {f"{int(d[:4])}年{int(d[5:7])}月{int(d[8:10])}日", f"{d[:4]}年{d[5:7]}月{d[8:10]}日"}  # 「11月01日」の形もある
-    return any(x in t for x in dates) and f" {int(race['race_no'])}R" in t and str(race.get("venue", "")) in t
+    return any(x in t for x in dates) and f" {int(race['race_no'])}R" in t and str(race.get("venue", "")).replace("温泉", "") in t  # netkeirin「伊東温泉」↔ Kドリ「伊東競輪」
 
 
 def save_section(cache_dir: Path, url: str, html: str):
