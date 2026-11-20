@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS predictions (
     created_at  TEXT NOT NULL,
     PRIMARY KEY (race_id, car_no)
 );
+-- 予想方法ごとの1着確率（締切前オッズでの判断に使う）。朝の予想を残す。
+CREATE TABLE IF NOT EXISTS predictions_m (
+    race_id     TEXT NOT NULL,
+    car_no      INTEGER NOT NULL,
+    method      TEXT NOT NULL,
+    win_prob    REAL NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (race_id, car_no, method)
+);
 -- 出走表ページに載る「3連単1番人気」の情報。買うかどうかの判断だけに使い、予想（AI）には入れない。
 -- 最初に取った値を残す（本番では朝の値）。
 CREATE TABLE IF NOT EXISTS market (
@@ -205,6 +214,14 @@ class DB:
     def market(self, race_id: str) -> dict | None:
         r = self.con.execute("SELECT fav1, fav_odds, sup1 FROM market WHERE race_id=?", (race_id,)).fetchone()
         return {"fav1": r[0], "fav_odds": r[1], "sup1": r[2]} if r else None
+
+    def save_method_preds(self, race_id: str, method: str, cars, probs):
+        self.con.executemany("INSERT OR IGNORE INTO predictions_m VALUES (?,?,?,?,?)",
+                             [(race_id, int(c), method, float(p), now_str()) for c, p in zip(cars, probs)])
+
+    def method_preds(self, race_id: str, method: str) -> dict[int, float]:
+        return {int(c): float(p) for c, p in self.con.execute(
+            "SELECT car_no, win_prob FROM predictions_m WHERE race_id=? AND method=?", (race_id, method))}
 
     def upsert_payouts(self, race_id: str, bet_type: str, payouts: dict[str, int]):
         self.con.executemany(

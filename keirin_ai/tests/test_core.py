@@ -314,3 +314,23 @@ def test_line_combos_harville_and_line_effect():
         assert abs(sum(ln[bt].values()) - 1) < 1e-9
     # 先頭5が勝つなら番手7が来やすい: 5-7 は ハービルより高く
     assert ln["2車複"]["5-7"] > b["2車複"]["5-7"] * 1.5
+
+
+def test_market_model_one_bet():
+    import numpy as np
+    from keirin.market_model import apply_model, market_table, one_bet
+    from itertools import combinations, permutations
+    cars = [1, 2, 3, 4, 5, 6, 7]
+    od = {"2車単": {f"{a}>{b}": 10.0 + a + b for a, b in permutations(cars, 2)},
+          "2車複": {f"{a}-{b}": 5.0 + a for a, b in combinations(cars, 2)},
+          "ワイド": {f"{a}-{b}": 2.0 + a for a, b in combinations(cars, 2)},
+          "3連複": {f"{a}-{b}-{c}": 20.0 + a for a, b, c in combinations(cars, 3)}}
+    tab = market_table(od, 7)
+    assert len(tab) == 42 + 21 + 21 + 35
+    flat = {"cols": ["q"], "mu": [0, 0, 0], "sd": [1, 1, 1], "w": [0.0, 1.0, 0.0, 0.0]}   # pm = sigmoid(log q)
+    model = {bt: {**flat} for bt in ("2車複", "ワイド", "2車単", "3連複")}
+    t = apply_model(tab, model)
+    assert np.isfinite(t["ev"]).all()
+    assert one_bet(t, 1e9) is None
+    assert one_bet(t, 0.0)["odds"] <= 30
+    assert market_table({**od, "ワイド": {}}, 7) is None

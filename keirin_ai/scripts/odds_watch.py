@@ -1,4 +1,5 @@
 """今日のレースの「締切前オッズ」を Kドリームスから記録する（発走の約10分前と約3分前の2回）。
+3分前のオッズで、1レース1点ルール（keirin/market_model.py）の仮想購入も記録する。
 
 - 検証用: 確定オッズで見つけた傾向が、実際に買える時点のオッズでも残るかを確かめる。
 - 個人で使うだけ。取ったデータは GitHub などに置かない（data/ は git の対象外）。
@@ -18,6 +19,52 @@ sys.path.insert(0, str(ROOT))
 from keirin.db import DB  # noqa: E402
 from keirin.sources import kdreams as kd  # noqa: E402
 from keirin.sources.http import PoliteFetcher  # noqa: E402
+from keirin.line_combos import line_combo_probs  # noqa: E402
+from keirin.market_model import apply_model, market_table, one_bet  # noqa: E402
+
+import pandas as pd  # noqa: E402
+
+DECIDE_MARK = 3          # この時点（発走3分前）のオッズで仮想購入を決める
+LINE_BASE = "LightGBM+競走得点"
+# (記録名, モデルファイル, ライン連動を使うか, 期待値の基準)。ルールは 2026-11-20 に固定（事前登録）。
+RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1),
+         ("オッズ1点・EV1.2", "odds_only_v1.pkl", False, 1.2),
+         ("オッズ+ライン1点・EV1.1", "odds_line_v1.pkl", True, 1.1),
+         ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2)]
+_MODELS: dict = {}
+
+
+def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
+    """締切前オッズで、1レース1点のルールの仮想購入を記録する。欠車があるレースは記録しない（学習と同じ条件）。"""
+    ent = db.df("SELECT car_no, scratched, line_id, line_pos, line_size FROM entries WHERE race_id=?", (race["race_id"],))
+    if ent.empty or (ent["scratched"] == 1).any():
+        return 0
+    cars = sorted(ent["car_no"].astype(int).tolist())
+    wp = db.method_preds(race["race_id"], LINE_BASE)
+    lp = None
+    if wp and all(c in wp for c in cars):
+        lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in ent.itertuples() if pd.notna(r.line_id)}
+        lp = line_combo_probs(cars, [wp[c] for c in cars], lines)
+    n = 0
+    for name, mfile, use_line, th in RULES:
+        if use_line and lp is None:
+            continue
+        if mfile not in _MODELS:
+            _MODELS[mfile] = pd.read_pickle(ROOT / "data" / "market_models" / mfile)
+        tab = market_table(odds, len(cars), lp if use_line else None)
+        if tab is None:
+            return n
+        b = one_bet(apply_model(tab, _MODELS[mfile]), th)
+        if b is None:
+            continue
+        cur = db.con.execute(
+            """INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
+                   odds_final, ev, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("live", race["race_id"], race["date"], name, b["bt"], b["combo"], 100, float(b["pm"]),
+             float(b["odds"]), 0, float(b["ev"]), ts))
+        n += cur.rowcount
+    db.commit()
+    return n
 
 MARKS = (10, 3)          # 発走の何分前に取るか
 LATE_OK = 1.5            # 予定時刻から何分遅れまでなら取りにいくか（発走前に限る）
@@ -73,6 +120,10 @@ def main(limit: float = 7000):
                         for bt, od in info["odds"].items():
                             db.insert_odds(r["race_id"], bt, od, info["final"], ts)
                         db.commit(); ok += 1
+                        if m == DECIDE_MARK and not info["final"]:
+                            nb = decide(db, r, info["odds"], ts)
+                            if nb:
+                                print("仮想購入", r["race_id"], nb, "点", flush=True)
                 except Exception as e:  # noqa: BLE001
                     bad += 1; print("失敗", r["race_id"], str(e)[:80], flush=True)
                 done.add((r["race_id"], m))
