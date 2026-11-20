@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-BET_TYPES = ("2車複", "2車単", "3連複")
+BET_TYPES = ("2車複", "2車単", "3連複", "ワイド")
 
 
 def combo_key(bet_type: str, cars: tuple[int, ...]) -> str:
@@ -54,6 +54,11 @@ def combo_probs(cars: list[int], win_probs: list[float] | np.ndarray,
                         continue
                     k3 = combo_key("3連複", (cars[i], cars[j], cars[m]))
                     out["3連複"][k3] = out["3連複"].get(k3, 0.0) + pij * p3[m]
+    # ワイド: 2人とも3着以内に入る確率 = その2人を含む3連複の確率の合計
+    for k3, v in out["3連複"].items():
+        a, b, c = k3.split("-")
+        for k in (f"{a}-{b}", f"{a}-{c}", f"{b}-{c}"):
+            out["ワイド"][k] = out["ワイド"].get(k, 0.0) + v
     return out
 
 

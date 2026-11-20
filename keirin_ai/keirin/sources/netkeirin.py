@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 BASE = "https://keirin.netkeiba.com"
 GRADE_MAP = {"GP": "GP", "GI": "G1", "GII": "G2", "GIII": "G3", "FI": "F1", "FII": "F2"}
-BET_ROW_CLASS = {"Umaren": "2車複", "Umatan": "2車単", "Fuku3": "3連複"}
+BET_ROW_CLASS = {"Umaren": "2車複", "Umatan": "2車単", "Fuku3": "3連複", "Wide": "ワイド"}
 
 
 def _nfkc(s: str) -> str:
