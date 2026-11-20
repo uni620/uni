@@ -152,8 +152,8 @@ def check_page(info: dict, race: dict) -> bool:
     """取ったページが本当にそのレースか（題名の日付・場名・レース番号）を確かめる。"""
     t = info.get("title", "")
     d = race["date"]
-    want_date = f"{int(d[:4])}年{int(d[5:7])}月{int(d[8:10])}日"
-    return want_date in t and f" {int(race['race_no'])}R" in t and str(race.get("venue", "")) in t
+    dates = {f"{int(d[:4])}年{int(d[5:7])}月{int(d[8:10])}日", f"{d[:4]}年{d[5:7]}月{d[8:10]}日"}  # 「11月01日」の形もある
+    return any(x in t for x in dates) and f" {int(race['race_no'])}R" in t and str(race.get("venue", "")) in t
 
 
 def save_section(cache_dir: Path, url: str, html: str):

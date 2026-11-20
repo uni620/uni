@@ -296,3 +296,4 @@ def test_kdreams_id_and_parse():
     assert info["odds"] == {"2車複": {"1-9": 1.6}, "ワイド": {"1-9": 1.2}}   # ワイドは低い方
     assert kd.check_page(info, {"date": "2026-11-20", "race_no": 9, "venue": "西武園"})
     assert not kd.check_page(info, {"date": "2026-11-19", "race_no": 9, "venue": "西武園"})
+    assert kd.check_page({"title": "西武園競輪 レース詳細 | 杯 4R Ａ級 | 2026年11月01日"}, {"date": "2026-11-01", "race_no": 4, "venue": "西武園"})
