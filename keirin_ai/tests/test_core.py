@@ -278,3 +278,21 @@ def test_skip_overconfident_and_parse_market():
               <td>5.3</td></tr><tr><th>支持率</th><td>45.2%</td><td>30.1%</td><td>25.0%</td></tr></table>"""
     m = parse_market(BeautifulSoup(html, "html.parser"))
     assert m == {"mkt_fav1": 4, "mkt_fav_odds": 5.3, "mkt_sup1": pytest.approx(0.452)}
+
+
+def test_kdreams_id_and_parse():
+    from keirin.sources import kdreams as kd
+    # 西武園 11/18 初日の開催の 3日目 9R
+    assert kd.kd_id("202611202609", "2026-11-18") == "2620261118030009"
+    assert kd.odds_url("202611202609", "2026-11-18").startswith("https://keirin.kdreams.jp/seibuen/racedetail/2620261118030009/")
+    html = """<title>西武園競輪 レース詳細 | 一般 9R Ａ級 | 2026年11月20日【楽天Kドリームス】</title>
+    <div class="odds_header">確定オッズ 2026/11/20 16:50現在</div>
+    <div id="JS_ODDSCONTENTS_2shahuku"><div class="oddspop_table_wrapper"><ul><li><p class="header">人気順</p>
+      <table><tr><th>1</th><td><span><span class="num">1=9</span><span class="odds">1.6</span></span></td></tr></table></li></ul></div></div>
+    <div id="JS_ODDSCONTENTS_wide"><div class="oddspop_table_wrapper"><ul><li><p class="header">人気順</p>
+      <table><tr><th>1</th><td><span><span class="num">9=1</span><span class="odds">1.2～1.4</span></span></td></tr></table></li></ul></div></div>"""
+    info = kd.parse_odds(html)
+    assert info["final"] and info["as_of"] == "2026/11/20 16:50"
+    assert info["odds"] == {"2車複": {"1-9": 1.6}, "ワイド": {"1-9": 1.2}}   # ワイドは低い方
+    assert kd.check_page(info, {"date": "2026-11-20", "race_no": 9, "venue": "西武園"})
+    assert not kd.check_page(info, {"date": "2026-11-19", "race_no": 9, "venue": "西武園"})
