@@ -68,3 +68,6 @@ predict_window_min = 40
 enabled = true
 base = "LightGBM+競走得点"
 name = "ライン連動"
+# 記録するのは各券種の本命1点だけ（ずらし・AIの期待値買いは記録しない）
+trio_shift = false
+ev = false

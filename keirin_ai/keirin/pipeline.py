@@ -126,7 +126,8 @@ def predict_and_bet(db: DB, cfg: Config, methods: list, feats: pd.DataFrame, rac
             lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in g.itertuples()
                      if pd.notna(getattr(r, "line_id", None))}
             probs = line_combo_probs(cars, wp, lines)
-            bets += decide_bets(lcfg.get("name", "ライン連動"), cars, wp, odds_by_type, final_flags, scfg, probs=probs)
+            lscfg = {**scfg, "trio_shift_enabled": lcfg.get("trio_shift", False), "ev_enabled": lcfg.get("ev", False)}
+            bets += decide_bets(lcfg.get("name", "ライン連動"), cars, wp, odds_by_type, final_flags, lscfg, probs=probs)
         if save_predictions_of and save_predictions_of in preds:
             p = preds[save_predictions_of]
             for car, pw in zip(g["car_no"], p.loc[g.index, "p_win"]):
