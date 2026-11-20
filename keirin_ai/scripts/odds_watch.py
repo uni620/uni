@@ -59,6 +59,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         lp = line_combo_probs(cars, [wp[c] for c in cars], lines)
     n = 0
     picks: list[str] = []
+    near = ""
     for name, mfile, use_line, th, mx in RULES:
         if use_line and lp is None:
             continue
@@ -67,8 +68,13 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         tab = market_table(odds, len(cars), lp if use_line else None)
         if tab is None:
             return n
-        b = one_bet(apply_model(tab, _MODELS[mfile]), th, mx)
+        scored = apply_model(tab, _MODELS[mfile])
+        b = one_bet(scored, th, mx)
         if b is None:
+            if not use_line and mx == 30 and th == 1.2:
+                c = one_bet(scored, -1, mx)
+                if c is not None:
+                    near = f"候補 {c['bt']}{c['combo']} {c['odds']}倍 EV{c['ev']:.2f} ボーダー{1.2 / c['pm']:.1f}倍"
             continue
         cur = db.con.execute(
             """INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
@@ -76,12 +82,13 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
             ("live", race["race_id"], race["date"], name, b["bt"], b["combo"], 100, float(b["pm"]),
              float(b["odds"]), 0, float(b["ev"]), ts))
         n += cur.rowcount
-        picks.append(f"{name}:{b['bt']}{b['combo']} {b['odds']}倍 EV{b['ev']:.2f}")
+        # ボーダー: 当たる確率をそのままとして、期待値が基準になる最低オッズ（これ未満なら見送り）
+        picks.append(f"{name}:{b['bt']}{b['combo']} {b['odds']}倍 EV{b['ev']:.2f} ボーダー{th / b['pm']:.1f}倍")
     db.commit()
     if picks:
         print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|買い " + " / ".join(picks) + f"|{yoso}", flush=True)
     else:
-        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り|{yoso}", flush=True)
+        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り {near}|{yoso}", flush=True)
     return n
 
 MARKS = (10, 7, 3)       # 発走の何分前に取るか（3分前はオッズの動きを見る記録用）
