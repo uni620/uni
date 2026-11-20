@@ -1,5 +1,5 @@
 """今日のレースの「締切前オッズ」を Kドリームスから記録する（発走の約10分前と約3分前の2回）。
-3分前のオッズで、1レース1点ルール（keirin/market_model.py）の仮想購入も記録する。
+7分前のオッズで、1レース1点ルール（keirin/market_model.py）の仮想購入も記録する。
 
 - 検証用: 確定オッズで見つけた傾向が、実際に買える時点のオッズでも残るかを確かめる。
 - 個人で使うだけ。取ったデータは GitHub などに置かない（data/ は git の対象外）。
@@ -24,7 +24,7 @@ from keirin.market_model import apply_model, market_table, one_bet  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
-DECIDE_MARK = 3          # この時点（発走3分前）のオッズで仮想購入を決める
+DECIDE_MARK = 7          # この時点（発走7分前）のオッズで仮想購入を決める（締切に間に合うように）
 LINE_BASE = "LightGBM+競走得点"
 # (記録名, モデルファイル, ライン連動を使うか, 期待値の基準, オッズ上限)。ルールは 2026-11-20 に固定（事前登録）。
 RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
@@ -42,6 +42,17 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         return 0
     cars = sorted(ent["car_no"].astype(int).tolist())
     wp = db.method_preds(race["race_id"], LINE_BASE)
+    # 通知用の予想: ライン連動の本命（無ければ LightGBM の保存済み予想で作る）
+    wp_view = wp or {int(c): float(p) for c, p in db.con.execute(
+        "SELECT car_no, win_prob FROM predictions WHERE race_id=?", (race["race_id"],))}
+    yoso = ""
+    if wp_view and all(c in wp_view for c in cars):
+        lines_v = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in ent.itertuples() if pd.notna(r.line_id)}
+        pv = [wp_view[c] for c in cars]
+        lpv = line_combo_probs(cars, pv, lines_v)
+        top = sorted(zip(cars, pv), key=lambda x: -x[1])[:3]
+        yoso = ("予想 " + " ".join(f"{c}番{p*100:.0f}%" for c, p in top) + " 本命 "
+                + " ".join(f"{bt}{max(lpv[bt], key=lpv[bt].get)}" for bt in ("2車複", "3連複")))
     lp = None
     if wp and all(c in wp for c in cars):
         lines = {int(r.car_no): (r.line_id, r.line_pos, r.line_size) for r in ent.itertuples() if pd.notna(r.line_id)}
@@ -68,12 +79,12 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         picks.append(f"{name}:{b['bt']}{b['combo']} {b['odds']}倍 EV{b['ev']:.2f}")
     db.commit()
     if picks:
-        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|" + " / ".join(picks), flush=True)
-    elif lp is not None or True:
-        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り（基準以上の目なし）", flush=True)
+        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|買い " + " / ".join(picks) + f"|{yoso}", flush=True)
+    else:
+        print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り|{yoso}", flush=True)
     return n
 
-MARKS = (10, 3)          # 発走の何分前に取るか
+MARKS = (10, 7, 3)       # 発走の何分前に取るか（3分前はオッズの動きを見る記録用）
 LATE_OK = 1.5            # 予定時刻から何分遅れまでなら取りにいくか（発走前に限る）
 
 
