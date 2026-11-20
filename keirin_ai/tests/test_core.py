@@ -254,3 +254,4 @@ def test_trio_shift_filtered_and_min_odds():
     assert {b["bet_type"] for b in f} == {"2車単", "2車複"} and all(b["strategy"] == "M・絞り込み" for b in f)
     assert filtered_bets(bets, "A級チャレンジ", cfg) == []
     assert min_odds(0.2) == 6.0 and min_odds(0.2, 1.0) == 5.0 and min_odds(None) is None
+    assert min_odds(0.387, 1.0, "3連複") == round(1 / 0.178, 1)   # 3連複は実際の的中率に直す

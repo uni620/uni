@@ -64,11 +64,23 @@ def filtered_bets(bets: list[dict], race_class: str | None, cfg: dict) -> list[d
             for b in bets if b["strategy"].endswith("・本命") and b["bet_type"] in keep]
 
 
-def min_odds(prob: float | None, margin: float = 1.2) -> float | None:
-    """この倍率より低ければ買わない方がいい目安（確率×オッズ ≥ margin になる最低オッズ）。"""
+# 3連複の確率は高いほど出しすぎになる（ハービル式の癖）。9/23〜11/19 の約1.6万点で測った実際の的中率に直す。
+# 2車単・2車複はほぼ合っていた（AI 25%→実際24〜27%）ので直さない。
+TRIO_CALIB = ([0, .043, .068, .099, .153, .241, .387, 1.0], [0, .043, .067, .086, .115, .140, .178, .25])
+
+
+def calibrated(prob: float, bet_type: str | None = None) -> float:
+    if bet_type == "3連複":
+        import numpy as np
+        return float(np.interp(prob, *TRIO_CALIB))
+    return prob
+
+
+def min_odds(prob: float | None, margin: float = 1.2, bet_type: str | None = None) -> float | None:
+    """この倍率より低ければ買わない方がいい目安（実際の的中率×オッズ ≥ margin になる最低オッズ）。"""
     if not prob or prob <= 0:
         return None
-    return round(margin / prob, 1)
+    return round(margin / calibrated(prob, bet_type), 1)
 
 
 def decide_baseline(odds_by_type: dict[str, dict[str, float]], odds_is_final: dict[str, bool], cfg: dict) -> list[dict]:

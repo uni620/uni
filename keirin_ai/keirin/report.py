@@ -135,7 +135,7 @@ EXPLAIN = [
     ("確定オッズで判断(参考値)", "締切後のオッズを使って判断した点数。実際には買えないタイミングなので、多いほど結果は甘い。"),
     ("〇〇・3連複ずらし", "3連複で確率1番の組み合わせは人気が集まり配当が安いので、2〜4番目の3点を買う。過去検証で1番だけより回収率が高かった。"),
     ("〇〇・絞り込み", "本命のうち、成績の悪い3連複とA級チャレンジのレースを外したもの（2車単・2車複だけ）。"),
-    ("買う目安オッズ", "AIの確率×オッズが1.2以上になる最低の倍率。アプリで見たオッズがこれ未満なら、期待値が足りないので見送りが目安。損得なしオッズは1.0倍のライン。AIの確率はほぼ正確（確率8%→実際約10%）だが、保証ではない。"),
+    ("買う目安オッズ", "AIの確率×オッズが1.2以上になる最低の倍率。アプリで見たオッズがこれ未満なら、期待値が足りないので見送りが目安。損得なしオッズは1.0倍のライン。2車単・2車複はAIの確率がほぼ正確。3連複はAIの確率が高いほど出しすぎるので、実際の的中率に直して計算している。保証ではない。"),
     ("注意", "これは記録用の仮想購入で、実際の購入はしていない。架空データ（sample）での数字は本物の競輪と無関係。"),
 ]
 
@@ -170,8 +170,8 @@ def write_report(db: DB, path: str | Path, eval_info: dict | None = None,
                      WHERE b.mode='live' AND b.date=(SELECT MAX(date) FROM bets WHERE mode='live')
                      ORDER BY r.start_time, r.venue, r.race_no, b.strategy, b.bet_type""")
     if not today.empty:
-        today["損得なしオッズ"] = today["AI確率"].map(lambda p: min_odds(p, 1.0))
-        today["買う目安オッズ(これ未満は見送り)"] = today["AI確率"].map(lambda p: min_odds(p, margin))
+        today["損得なしオッズ"] = [min_odds(p, 1.0, bt) for p, bt in zip(today["AI確率"], today["券種"])]
+        today["買う目安オッズ(これ未満は見送り)"] = [min_odds(p, margin, bt) for p, bt in zip(today["AI確率"], today["券種"])]
         today["結果"] = today["結果"].map({"won": "的中", "lost": "外れ", "refund": "返還", "open": "未確定"})
     hist = all_bets.rename(columns={
         "mode": "区分", "race_id": "レースID", "date": "日付", "strategy": "戦略", "bet_type": "券種",
