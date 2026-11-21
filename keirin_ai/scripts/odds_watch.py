@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 from datetime import date as D, datetime, timedelta
@@ -182,7 +183,7 @@ def _next_due_gap(races: list[dict], done: set, today: str) -> float:
 def main(limit: float = 7000):
     db = DB(str(ROOT / "data" / "keirin.sqlite"))
     db.con.execute("CREATE TABLE IF NOT EXISTS bf_skip (race_id TEXT PRIMARY KEY)")
-    f = PoliteFetcher("keirin-ai-personal/0.1", 3.0, str(ROOT / "data" / "cache_kdreams_live"))
+    f = PoliteFetcher("keirin-ai-personal/0.1", float(os.environ.get("KD_INTERVAL", "3.0")), str(ROOT / "data" / "cache_kdreams_live"))
     t0 = time.time()
     today = datetime.now().strftime("%Y-%m-%d")
     done: set[tuple[str, int]] = set()
@@ -193,7 +194,10 @@ def main(limit: float = 7000):
                       (today,)).to_dict("records")
         if not races:
             print("今日のレースが DB にない（朝の取り込み待ち）", flush=True)
-            time.sleep(300)
+            t_end = time.time() + 300          # 待つ間も過去の3連単を取る
+            while BACKFILL and time.time() < t_end and backfill_one(db, f):
+                pass
+            time.sleep(max(0.0, t_end - time.time()))
             continue
         pending = 0
         for r in races:
