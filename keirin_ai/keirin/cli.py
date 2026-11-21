@@ -231,12 +231,7 @@ def cmd_predict(cfg, args):
     if not targets:
         log.info("予想対象のレースはありません（%s）", today)
         return
-    if src is not None:
-        for r in targets:
-            try:
-                pipeline.ingest_odds(db, src, r)
-            except Exception as e:
-                log.warning("オッズ取得失敗 %s: %s", r["race_id"], e)
+    # 朝のオッズは取らない（2026-11-22 閲覧回数を減らすため。オッズは締切8分前の記録で取る）
     feats = pipeline.features_for(db, cfg, until_date=today)
     n = pipeline.predict_and_bet(db, cfg, methods, feats, [r["race_id"] for r in targets], "live",
                                  decided_at=now_str(), save_predictions_of="LightGBM")
