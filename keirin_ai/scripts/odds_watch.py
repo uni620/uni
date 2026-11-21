@@ -31,7 +31,8 @@ RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
          ("オッズ1点・EV1.2", "odds_only_v1.pkl", False, 1.2, 30),
          ("オッズ+ライン1点・EV1.1", "odds_line_v1.pkl", True, 1.1, 30),
          ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2, 30),
-         ("オッズ1点・10倍以下EV1.1", "odds_only_v1.pkl", False, 1.1, 10)]   # 11/20 追加: 的中が多くブレが小さい
+         ("オッズ1点・10倍以下EV1.1", "odds_only_v1.pkl", False, 1.1, 10),   # 11/20 追加: 的中が多くブレが小さい
+         ("ver1（オッズ1点・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10)]   # 11/22 ver1 として固定（検証で一番高かった）
 _MODELS: dict = {}
 
 
