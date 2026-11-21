@@ -42,11 +42,12 @@ def kd_id(race_id: str, meet_start: str) -> str:
     return f"{race_id[8:10]}{meet_start.replace('-', '')}{day:02d}00{race_id[10:12]}"
 
 
-def odds_url(race_id: str, meet_start: str) -> str | None:
+def odds_url(race_id: str, meet_start: str, kind: str = "2shahuku") -> str | None:
+    """kind: 2shahuku（2車複・2車単・3連複・ワイドが1ページに載る）/ 3rentan（3連単は別ページ）"""
     slug = SLUGS.get(race_id[8:10])
     if slug is None:
         return None
-    return f"{BASE}/{slug}/racedetail/{kd_id(race_id, meet_start)}/?pageType=odds&kakeshikiType=2shahuku"
+    return f"{BASE}/{slug}/racedetail/{kd_id(race_id, meet_start)}/?pageType=odds&kakeshikiType={kind}"
 
 
 def _num(s: str) -> float | None:
@@ -56,6 +57,8 @@ def _num(s: str) -> float | None:
 
 
 def _key(bt: str, cars: list[int]) -> str:
+    if bt == "3連単":
+        return ">".join(str(c) for c in cars)
     return f"{cars[0]}>{cars[1]}" if bt == "2車単" else "-".join(str(c) for c in sorted(cars))
 
 
@@ -156,11 +159,49 @@ def check_page(info: dict, race: dict) -> bool:
     return any(x in t for x in dates) and f" {int(race['race_no'])}R" in t and str(race.get("venue", "")).replace("温泉", "") in t  # netkeirin「伊東温泉」↔ Kドリ「伊東競輪」
 
 
+def _trifecta_tables(sec) -> dict[tuple[int, int, int], float]:
+    """3連単の表: 1着ごとに1つ。列の見出し＝2着、行の見出し＝3着（人気順の表で向きを確認済み）。"""
+    out = {}
+    for tb in sec.select("table.odds_table"):
+        h = tb.select_one("th[colspan] .number")
+        trs = tb.select("tr")
+        if h is None or len(trs) < 3:
+            continue
+        a = int(h.get_text(strip=True))
+        cols = [int(x.get_text(strip=True)) for x in trs[1].select("th") if x.get_text(strip=True).isdigit()]
+        for tr in trs[3:]:
+            th = tr.select_one("th")
+            if th is None or not th.get_text(strip=True).isdigit():
+                continue
+            r = int(th.get_text(strip=True))
+            for c, td in zip(cols, tr.select("td")):
+                v = _num(td.get_text())
+                if v:
+                    out[(a, c, r)] = v
+    return out
+
+
+def parse_trifecta(html: str) -> dict:
+    """3連単のページ → {"odds": {"3連単": {"1>2>3": オッズ}}, "final", "title", "as_of"}。人気順の表と食い違えば空。"""
+    s = BeautifulSoup(html, "html.parser")
+    title = s.title.get_text(strip=True) if s.title else ""
+    head = s.select_one(".odds_header")
+    head_txt = head.get_text(" ", strip=True) if head else ""
+    m = re.search(r"(\d{4}/\d{2}/\d{2} \d{2}:\d{2})現在", head_txt)
+    sec = s.select_one("#JS_ODDSCONTENTS_3rentan")
+    odds = {}
+    if sec is not None:
+        full, pop = _trifecta_tables(sec), _pop_list(sec)
+        if full and (not pop or sum(full.get(c) == v for c, v in pop.items()) >= len(pop) * 0.9):
+            odds["3連単"] = {_key("3連単", list(c)): v for c, v in full.items()}
+    return {"odds": odds, "final": "確定オッズ" in head_txt, "title": title, "as_of": m.group(1) if m else None}
+
+
 def save_section(cache_dir: Path, url: str, html: str):
     """オッズ部分だけを gzip で保存（読み直し用）。"""
     s = BeautifulSoup(html, "html.parser")
     keep = [str(s.title or "")] + [str(x) for x in s.select(".odds_header")] + \
-        [str(s.select_one(f"#JS_ODDSCONTENTS_{k}") or "") for k in TYPES]
+        [str(s.select_one(f"#JS_ODDSCONTENTS_{k}") or "") for k in (*TYPES, "3rentan")]
     p = Path(cache_dir) / (hashlib.sha1(url.encode()).hexdigest() + ".html.gz")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(gzip.compress("\n".join(keep).encode("utf-8")))

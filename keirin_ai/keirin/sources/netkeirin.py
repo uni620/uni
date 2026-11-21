@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 BASE = "https://keirin.netkeiba.com"
 GRADE_MAP = {"GP": "GP", "GI": "G1", "GII": "G2", "GIII": "G3", "FI": "F1", "FII": "F2"}
-BET_ROW_CLASS = {"Umaren": "2車複", "Umatan": "2車単", "Fuku3": "3連複", "Wide": "ワイド"}
+BET_ROW_CLASS = {"Umaren": "2車複", "Umatan": "2車単", "Fuku3": "3連複", "Wide": "ワイド", "Tan3": "3連単"}
 
 
 def _nfkc(s: str) -> str:
@@ -237,7 +237,9 @@ def parse_result(html: str, race_id: str) -> RaceResult | None:
         res, pay = tr.select_one(".Result"), tr.select_one(".Payout")
         if bt and res and pay:
             combo = _nfkc(res.get_text()).replace("=", "-")
-            if bt != "2車単":
+            if bt == "3連単":
+                combo = ">".join(re.findall(r"\d+", combo))
+            elif bt != "2車単":
                 combo = "-".join(str(x) for x in sorted(_int(p) for p in combo.split("-") if _int(p) is not None))
             v = _int(pay.get_text())
             if v is not None:
