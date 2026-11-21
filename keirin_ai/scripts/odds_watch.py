@@ -21,6 +21,7 @@ from keirin.sources import kdreams as kd  # noqa: E402
 from keirin.sources.http import PoliteFetcher  # noqa: E402
 from keirin.line_combos import line_combo_probs  # noqa: E402
 from keirin.market_model import apply_model, market_table, one_bet  # noqa: E402
+from keirin.ana import ANA_NAME, GYOKUSAI_NAME, ana_pick, gyokusai_bets  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
@@ -95,6 +96,63 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         print(f"通知|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|見送り {near}|{yoso}", flush=True)
     return n
 
+def decide_ana(db: DB, race: dict, tri: dict, exacta: dict | None, ts: str) -> int:
+    """穴の系統（keirin/ana.py）の仮想購入。8分前の3連単（と2車単）のオッズで決める。欠車レースは記録しない。"""
+    ent = db.df("SELECT car_no, rider_id, score, line_id, line_pos, line_size, scratched FROM entries WHERE race_id=?",
+                (race["race_id"],))
+    if ent.empty or (ent["scratched"] == 1).any():
+        return 0
+    n = 0
+    picks = []
+    if "ana" not in _MODELS:
+        _MODELS["ana"] = pd.read_pickle(ROOT / "data" / "market_models" / "ana_v1.pkl")
+    seen = {r[0] for r in db.con.execute("SELECT strategy FROM bets WHERE mode='live' AND race_id=?", (race["race_id"],))}
+    if ANA_NAME not in seen:
+        b = ana_pick(tri, ent, _MODELS["ana"])
+        if b:
+            n += db.con.execute("""INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
+                   odds_final, ev, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   ("live", race["race_id"], race["date"], ANA_NAME, "3連単", b["combo"], 100, b["pm"], b["odds"], 0, b["ev"], ts)).rowcount
+            picks.append(f"穴v1:3連単{b['combo']} {b['odds']}倍 EV{b['ev']:.2f}")
+    if GYOKUSAI_NAME not in seen and exacta:
+        for cb in gyokusai_bets(db.con, race["race_id"], race["date"], ent, exacta):
+            n += db.con.execute("""INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
+                   odds_final, ev, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   ("live", race["race_id"], race["date"], GYOKUSAI_NAME, "3連単", cb, 100, None, tri.get(cb), 0, None, ts)).rowcount
+        if n and GYOKUSAI_NAME not in seen:
+            picks.append("玉砕番手v1:12点")
+    db.commit()
+    if picks:
+        print(f"穴の系統|{race.get('venue')}{race.get('race_no')}R|" + " / ".join(picks), flush=True)
+    return n
+
+
+def backfill_one(db: DB, f) -> bool:
+    """空き時間に、過去レースの3連単の確定オッズを1レース分だけ取る（新しい順、6/11以降、まだ無いもの）。"""
+    r = db.con.execute("""SELECT race_id, date, venue, race_no FROM races r WHERE has_result=1 AND date>='2026-06-11'
+            AND date < date('now','localtime')
+            AND EXISTS (SELECT 1 FROM odds o WHERE o.race_id=r.race_id AND o.is_final=1)
+            AND NOT EXISTS (SELECT 1 FROM odds o WHERE o.race_id=r.race_id AND o.bet_type='3連単' AND o.is_final=1)
+            AND race_id NOT IN (SELECT race_id FROM bf_skip)
+            ORDER BY date DESC LIMIT 1""").fetchone()
+    if r is None:
+        return False
+    rid, d, venue, rno = r
+    race = {"race_id": rid, "date": d, "venue": venue, "race_no": rno}
+    try:
+        url = kd.odds_url(rid, meet_start(db, rid[8:10], d), "3rentan")
+        info = kd.parse_trifecta(f.get(url)) if url else None
+        if info and kd.check_page(info, race) and info["odds"]:
+            ts = info["as_of"].replace("/", "-") + ":00" if info["as_of"] else None
+            db.insert_odds(rid, "3連単", info["odds"]["3連単"], info["final"], ts)
+        else:
+            db.con.execute("INSERT OR IGNORE INTO bf_skip VALUES (?)", (rid,))
+    except Exception:  # noqa: BLE001
+        db.con.execute("INSERT OR IGNORE INTO bf_skip VALUES (?)", (rid,))
+    db.commit()
+    return True
+
+
 MARKS = (10, 8, 3)       # 発走の何分前に取るか（3分前はオッズの動きを見る記録用）
 TRI_MARKS = (8, 3)       # 3連単も取る時点（判断用と、締切直前の記録用）
 LATE_OK = 1.5            # 予定時刻から何分遅れまでなら取りにいくか（発走前に限る）
@@ -109,8 +167,21 @@ def meet_start(db: DB, venue_code: str, d: str) -> str:
     return x.isoformat()
 
 
+BACKFILL = True
+
+
+def _next_due_gap(races: list[dict], done: set, today: str) -> float:
+    """次の記録予定まで何秒あるか（予定が無ければ大きな値）。"""
+    now = datetime.now()
+    gaps = [((datetime.strptime(f"{today} {r['start_time']}", "%Y-%m-%d %H:%M") - timedelta(minutes=m)) - now).total_seconds()
+            for r in races for m in MARKS if (r["race_id"], m) not in done]
+    gaps = [g for g in gaps if g > -LATE_OK * 60]
+    return min(gaps) if gaps else 1e9
+
+
 def main(limit: float = 7000):
     db = DB(str(ROOT / "data" / "keirin.sqlite"))
+    db.con.execute("CREATE TABLE IF NOT EXISTS bf_skip (race_id TEXT PRIMARY KEY)")
     f = PoliteFetcher("keirin-ai-personal/0.1", 3.0, str(ROOT / "data" / "cache_kdreams_live"))
     t0 = time.time()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -155,9 +226,11 @@ def main(limit: float = 7000):
                                 tu = kd.odds_url(r["race_id"], meet_start(db, r["race_id"][8:10], today), "3rentan")
                                 ti = kd.parse_trifecta(f.get(tu)) if tu else None
                                 if ti and kd.check_page(ti, r) and ti["odds"]:
-                                    db.insert_odds(r["race_id"], "3連単", ti["odds"]["3連単"], ti["final"],
-                                                   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                                    tts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    db.insert_odds(r["race_id"], "3連単", ti["odds"]["3連単"], ti["final"], tts)
                                     db.commit()
+                                    if m == DECIDE_MARK and not ti["final"]:
+                                        decide_ana(db, r, ti["odds"]["3連単"], info["odds"].get("2車単"), tts)
                             except Exception as e:  # noqa: BLE001
                                 print("3連単失敗", r["race_id"], str(e)[:80], flush=True)
                         if m == DECIDE_MARK and not info["final"]:
@@ -171,7 +244,12 @@ def main(limit: float = 7000):
         if pending == 0:
             print("今日の分は終わり", flush=True)
             break
-        time.sleep(15)
+        # 次に取る予定まで余裕があれば、その間に過去の3連単を取る（同じ取得器なので3秒以上の間隔は守られる）
+        t_end = time.time() + 15
+        while BACKFILL and time.time() < t_end - 4 and _next_due_gap(races, done, today) > 60:
+            if not backfill_one(db, f):
+                break
+        time.sleep(max(0.0, t_end - time.time()))
     print(f"--- 終了 {datetime.now():%H:%M} 成功{ok} 失敗{bad}", flush=True)
 
 
