@@ -28,6 +28,8 @@ def ingest_cards(db: DB, source: Source, date: str) -> list[dict]:
     for c in cards:
         db.upsert_race(c.race)
         db.upsert_entries(c.entries)
+        db.upsert_entry_info(c.entries)
+        db.insert_honshi_bets(c.race["race_id"], c.race.get("honshi_bets") or [])
         db.insert_market(c.race["race_id"], c.race.get("mkt_fav1"), c.race.get("mkt_fav_odds"), c.race.get("mkt_sup1"))
     db.commit()
     log.info("%s: 出走表 %dレース", date, len(cards))
@@ -53,6 +55,9 @@ def ingest_result(db: DB, source: Source, race: dict) -> bool:
     db.set_results(res.race_id, res.finishes, res.scratched, res.kimarite)
     for bt, p in res.payouts.items():
         db.upsert_payouts(res.race_id, bt, p)
+    for bt, n in (res.payout_ninki or {}).items():
+        db.upsert_payout_ninki(res.race_id, bt, n)
+    db.upsert_result_info(res.race_id, res.rider_info or {})
     _store_odds(db, res.final_odds)
     db.commit()
     return True

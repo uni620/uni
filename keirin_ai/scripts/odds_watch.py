@@ -96,6 +96,7 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
     return n
 
 MARKS = (10, 8, 3)       # 発走の何分前に取るか（3分前はオッズの動きを見る記録用）
+TRI_MARKS = (8, 3)       # 3連単も取る時点（判断用と、締切直前の記録用）
 LATE_OK = 1.5            # 予定時刻から何分遅れまでなら取りにいくか（発走前に限る）
 
 
@@ -149,6 +150,16 @@ def main(limit: float = 7000):
                         for bt, od in info["odds"].items():
                             db.insert_odds(r["race_id"], bt, od, info["final"], ts)
                         db.commit(); ok += 1
+                        if m in TRI_MARKS:            # 3連単は別ページ（1回ぶん通信が増える）
+                            try:
+                                tu = kd.odds_url(r["race_id"], meet_start(db, r["race_id"][8:10], today), "3rentan")
+                                ti = kd.parse_trifecta(f.get(tu)) if tu else None
+                                if ti and kd.check_page(ti, r) and ti["odds"]:
+                                    db.insert_odds(r["race_id"], "3連単", ti["odds"]["3連単"], ti["final"],
+                                                   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                                    db.commit()
+                            except Exception as e:  # noqa: BLE001
+                                print("3連単失敗", r["race_id"], str(e)[:80], flush=True)
                         if m == DECIDE_MARK and not info["final"]:
                             nb = decide(db, r, info["odds"], ts)
                             if nb:

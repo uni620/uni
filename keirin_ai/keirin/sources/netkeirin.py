@@ -138,13 +138,53 @@ def parse_entry(html: str, race_id: str) -> tuple[dict, list[dict]]:
             "km_sashi": cell("差し", _int), "km_mark": cell("マ", _int),
             "scratched": int("欠" in tr.get_text()),
         })
+        cm = tr.select_one("td.Txt_L")
+        rows[-1]["comment"] = cm.get_text(" ", strip=True) if cm else None
+        rows[-1]["honshi"] = None
         for k, label in extra_cols.items():
             i = exact.get(label)
             v = _float(tds[i].get_text(" ", strip=True).replace("%", "")) if i is not None and i < len(tds) else None
             rows[-1][k] = v
+    # 本紙の印は印のアイコンがある方の表（車番は2列目）から読む
+    marks = {}
+    for tr in s.select("tr"):
+        td = tr.select_one("td.Yoso01 svg")
+        tds = tr.select("td")
+        if td is None or len(tds) < 2 or not tds[1].get_text(strip=True).isdigit():
+            continue
+        m = next((HONSHI[k] for k in (td.get("class") or []) if k in HONSHI), None)
+        if m:
+            marks[int(tds[1].get_text(strip=True))] = m
+    for r in rows:
+        r["honshi"] = marks.get(r["car_no"])
     race["n_riders"] = len(rows)
     race.update(parse_market(s))
+    race["honshi_bets"] = parse_honshi_bets(s)
     return race, rows
+
+
+HONSHI = {"Icon_Honmei": "◎", "Icon_Taikou": "○", "Icon_Kurosan": "▲", "Icon_Shirosan": "△", "Icon_Hoshi": "×"}
+
+
+def parse_honshi_bets(s: BeautifulSoup) -> list[tuple[str, str]]:
+    """出走表の「本紙」の推奨買い目 → [(券種, 組み合わせ)]。3連単の「1>4>2,3,5」は3点に分ける。"""
+    out = []
+    for dl in s.select(".YosoKenkaiTxtBox .OddsWrap dl"):
+        dt = dl.select_one("dt")
+        bt = _nfkc(dt.get_text(strip=True)) if dt else ""
+        for dd in dl.select("dd"):
+            num = dd.select_one(".Num")
+            if num is None:
+                continue
+            main = [int(x.get_text(strip=True)) for x in num.select(".Wakuban") if x.find_parent(class_="Shaban_Other") is None]
+            other = [int(x.get_text(strip=True)) for x in num.select(".Shaban_Other .Wakuban")]
+            if bt == "3連単" and other and len(main) >= 2:
+                out += [(bt, f"{main[0]}>{main[1]}>{o}") for o in other]
+            elif bt in ("3連単", "2車単") and main:
+                out.append((bt, ">".join(map(str, main))))
+            elif main:
+                out.append((bt, "-".join(map(str, sorted(main + other)))))
+    return out
 
 
 def parse_market(s: BeautifulSoup) -> dict:
@@ -211,7 +251,7 @@ def parse_result(html: str, race_id: str) -> RaceResult | None:
     heads = [th.get_text("", strip=True) for th in table.select("tr.Header th")]
     i_car = heads.index("車番") if "車番" in heads else 2
     i_km = heads.index("決") if "決" in heads else None
-    finishes, kimarite, scratched = {}, {}, []
+    finishes, kimarite, scratched, rider_info = {}, {}, [], {}
     for tr in table.select("tr.PlayerList"):
         tds = tr.find_all("td", recursive=False)
         if len(tds) <= i_car:
@@ -229,9 +269,17 @@ def parse_result(html: str, race_id: str) -> RaceResult | None:
             k = tds[i_km].get_text(strip=True)
             if k:
                 kimarite[car] = k
+        info = {}
+        for key, label in (("margin", "着差"), ("agari", "上り"), ("sb", "SB")):
+            j = next((n for n, h in enumerate(heads) if h.startswith(label)), None)
+            if j is not None and j < len(tds):
+                v = tds[j].get_text(strip=True)
+                info[key] = (_float(v) if key == "agari" else v) or None
+        rider_info[car] = info
     if not finishes:
         return None
     payouts: dict[str, dict[str, int]] = {}
+    ninki: dict[str, dict[str, int]] = {}
     for tr in s.select(".Payout_Detail_Table tr"):
         bt = next((BET_ROW_CLASS[c] for c in (tr.get("class") or []) if c in BET_ROW_CLASS), None)
         res, pay = tr.select_one(".Result"), tr.select_one(".Payout")
@@ -244,7 +292,11 @@ def parse_result(html: str, race_id: str) -> RaceResult | None:
             v = _int(pay.get_text())
             if v is not None:
                 payouts.setdefault(bt, {})[combo] = v
-    return RaceResult(race_id=race_id, finishes=finishes, scratched=scratched, kimarite=kimarite, payouts=payouts)
+                nk = tr.select_one(".Ninki")
+                if nk is not None and _int(nk.get_text()) is not None:
+                    ninki.setdefault(bt, {})[combo] = _int(nk.get_text())
+    return RaceResult(race_id=race_id, finishes=finishes, scratched=scratched, kimarite=kimarite, payouts=payouts,
+                      payout_ninki=ninki, rider_info=rider_info)
 
 
 # ---------------- Source ----------------

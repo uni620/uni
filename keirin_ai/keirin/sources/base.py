@@ -30,6 +30,8 @@ class RaceResult:
     kimarite: dict[int, str] = field(default_factory=dict)        # {車番: 決まり手}（逃げ/捲り/差し/マーク）
     payouts: dict[str, dict[str, int]] = field(default_factory=dict)  # {券種: {組み合わせ: 100円あたり払戻}}
     final_odds: OddsSnapshot | None = None
+    payout_ninki: dict[str, dict[str, int]] = field(default_factory=dict)  # {券種: {組み合わせ: 何番人気}}
+    rider_info: dict[int, dict] = field(default_factory=dict)          # {車番: {margin: 着差, agari: 上り, sb: S/B}}
 
 
 class Source:

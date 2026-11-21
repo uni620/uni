@@ -72,6 +72,27 @@ CREATE TABLE IF NOT EXISTS payouts (
     payout      INTEGER NOT NULL,   -- 100円あたりの払戻金
     PRIMARY KEY (race_id, bet_type, combo)
 );
+CREATE TABLE IF NOT EXISTS entry_info (      -- 出走表の文字情報（レース前に公開されるもの）
+    race_id TEXT NOT NULL, car_no INTEGER NOT NULL,
+    comment TEXT,                      -- 選手コメント（「自力。」「○○君。」など）
+    honshi TEXT,                       -- netkeirin 本紙の印（◎○▲△×）
+    PRIMARY KEY (race_id, car_no)
+);
+CREATE TABLE IF NOT EXISTS honshi_bets (     -- netkeirin 本紙の推奨買い目
+    race_id TEXT NOT NULL, bet_type TEXT NOT NULL, combo TEXT NOT NULL,
+    PRIMARY KEY (race_id, bet_type, combo)
+);
+CREATE TABLE IF NOT EXISTS result_info (     -- 結果ページの選手ごとの中身
+    race_id TEXT NOT NULL, car_no INTEGER NOT NULL,
+    margin TEXT,                       -- 着差
+    agari REAL,                        -- 上り（最終周のタイム、秒）
+    sb TEXT,                           -- S（スタート先行）/ B（バック先頭）
+    PRIMARY KEY (race_id, car_no)
+);
+CREATE TABLE IF NOT EXISTS payout_ninki (    -- 配当の人気順（何番人気で決まったか）
+    race_id TEXT NOT NULL, bet_type TEXT NOT NULL, combo TEXT NOT NULL, ninki INTEGER,
+    PRIMARY KEY (race_id, bet_type, combo)
+);
 CREATE TABLE IF NOT EXISTS bets (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     mode        TEXT NOT NULL,      -- live（本番の仮想購入）/ backtest（過去検証）
@@ -222,6 +243,23 @@ class DB:
     def method_preds(self, race_id: str, method: str) -> dict[int, float]:
         return {int(c): float(p) for c, p in self.con.execute(
             "SELECT car_no, win_prob FROM predictions_m WHERE race_id=? AND method=?", (race_id, method))}
+
+    def upsert_entry_info(self, rows: list[dict]):
+        self.con.executemany(
+            """INSERT INTO entry_info VALUES (?,?,?,?) ON CONFLICT(race_id, car_no) DO UPDATE SET
+                   comment=COALESCE(excluded.comment, comment), honshi=COALESCE(excluded.honshi, honshi)""",
+            [(r["race_id"], r["car_no"], r.get("comment"), r.get("honshi")) for r in rows if r.get("car_no") is not None])
+
+    def insert_honshi_bets(self, race_id: str, bets: list[tuple[str, str]]):
+        self.con.executemany("INSERT OR IGNORE INTO honshi_bets VALUES (?,?,?)", [(race_id, b, c) for b, c in bets])
+
+    def upsert_result_info(self, race_id: str, info: dict[int, dict]):
+        self.con.executemany("INSERT OR REPLACE INTO result_info VALUES (?,?,?,?,?)",
+                             [(race_id, car, d.get("margin"), d.get("agari"), d.get("sb")) for car, d in info.items()])
+
+    def upsert_payout_ninki(self, race_id: str, bet_type: str, ninki: dict[str, int]):
+        self.con.executemany("INSERT OR REPLACE INTO payout_ninki VALUES (?,?,?,?)",
+                             [(race_id, bet_type, c, int(n)) for c, n in ninki.items()])
 
     def upsert_payouts(self, race_id: str, bet_type: str, payouts: dict[str, int]):
         self.con.executemany(
