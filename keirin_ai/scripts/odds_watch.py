@@ -79,6 +79,12 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
             return n
         scored = apply_model(tab, _MODELS[mfile])
         b = one_bet(scored, th, mx)
+        if name.startswith("ver1"):              # ver1 の結果は買い・見送りとも1行で残す（通知用）
+            c1 = one_bet(scored, -1, mx)
+            if c1 is not None:
+                print(f"ver1|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|"
+                      f"{'買い' if b is not None else 'なし'}|{c1['bt']}{c1['combo']}|{c1['odds']}|{c1['ev']:.2f}|{c1['pm']:.5f}",
+                      flush=True)
         if b is None:
             if not use_line and mx == 30 and th == 1.2:
                 c = one_bet(scored, -1, mx)
