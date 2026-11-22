@@ -11,3 +11,4 @@ export TZ=Asia/Tokyo
 python3 -m keirin daily --date "$(date -d yesterday +%F)"
 python3 -m keirin predict --all
 python3 -m keirin report
+python3 scripts/tenkai_daily.py "$(date +%F)"
