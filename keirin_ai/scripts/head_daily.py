@@ -28,11 +28,11 @@ for p in sorted(picks, key=lambda p: info.get(p['race_id'], ('', 0, ''))[2] or '
     if scratched:
         continue
     for strat, bets in p['bets'].items():
-        for bt, combo in bets:
+        for bt, combo, prob in bets:
             cur = db.con.execute(
                 """INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
                        odds_final, ev, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("live", p['race_id'], day, strat, bt, combo, 100, p['conf'], 0, 0, 0, ts))
+                ("live", p['race_id'], day, strat, bt, combo, 100, prob, 0, 0, 0, ts))
             n += cur.rowcount
 db.commit()
 print(f"頭AI v1: {pr.race_id.nunique()} レースを予想、自信60%以上 {len(picks)} レース、仮想購入 {n} 点（{day}）")

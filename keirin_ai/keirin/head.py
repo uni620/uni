@@ -5,10 +5,12 @@
   本当の調子（直近5走の上がり順位・勝者からの着差・着順）、90日の ちぎられ/ちぎり/まくり、競走得点・勝率、連係・対戦。
 相手AI（展開型）v1: 頭を出発点に、段階1 = 頭が勝つときに誰が B を取るか、段階2 = その展開で誰が2着・3着か。
   B の候補上位3人を、その確率で重み付けして合わせる。
+買い目ごとの見込み確率: 2車単 = 頭の確率×2着の確率、3連単 = 頭×2着×3着/(1−その2着の3着確率)。
 記録する買い方（頭AIの自信 = 頭の確率が 0.6 以上のレースだけ）:
   2車単3点 = 頭 → 2着候補上位3人 / 3連単9点 = 頭 → 2着候補上位3人 → 3着候補上位3人（2着と同じ選手は除く）
 検証（2026-04〜11、各月その月より前だけで学習）: 自信60%以上 1,270R で頭の的中 約78%、
   2車単3点 的中66.8%・回収率75%、3連単9点 的中56.4%・回収率80%。回収率は100%未満（的中を優先した形）。
+  さらに締切8分前に、3連単9点のうち 見込み確率×8分前オッズ が EV_MIN を超える目だけを別に記録する（BET_3T_EV）。
 """
 from __future__ import annotations
 
@@ -22,6 +24,8 @@ from keirin.tenkai import A as TENKAI_A, P as TENKAI_P, QUERY, features, stage2_
 HEAD_NAME = "頭AI v1"
 BET_2T = "頭AI v1＋相手AI展開型v1・2車単3点（自信60%以上）"
 BET_3T = "頭AI v1＋相手AI展開型v1・3連単9点（自信60%以上）"
+BET_3T_EV = "頭AI v1＋相手AI展開型v1・3連単9点のうち8分前EV1.2超"
+EV_MIN = 1.2   # 8分前の3連単オッズ×見込み確率 がこれを超える目だけ残す（2026-11-22 決定。確定オッズでの検証は EV1.2以上で回収率96%・95%幅62〜138%）
 MIN_CONF = 0.6
 
 FEAT = ['B_1着率', 'B_3着内率', 'B_回数', '先_1着率', '先_3着内率', '先_回数', '番_1着率', '番_3着内率', '番_回数', '単_3着内率',
@@ -247,10 +251,14 @@ def predict(con, today: str) -> tuple[pd.DataFrame, list[dict]]:
         if z.empty:
             continue
         hd = int(h.car_no)
-        s2 = z.sort_values('p2', ascending=False).car_no.astype(int).tolist()
-        s3 = z.assign(t=z.p2 + z.p3).sort_values('t', ascending=False).car_no.astype(int).tolist()
+        q2 = (z.set_index('car_no').p2 / z.p2.sum()); q3 = (z.set_index('car_no').p3 / z.p3.sum())
+        q2.index = q2.index.astype(int); q3.index = q3.index.astype(int)
+        s2 = q2.sort_values(ascending=False).index.tolist()
+        s3 = (q2 + q3).sort_values(ascending=False).index.tolist()
+        pr = float(h.pr)
         b1 = int(cand[cand.race_id == rid].car_no.iloc[0])
         picks.append(dict(race_id=rid, head=hd, conf=float(h.pr), b=b1, sec=s2[:3],
-                          bets={BET_2T: [('2車単', f'{hd}>{u}') for u in s2[:3]],
-                                BET_3T: [('3連単', f'{hd}>{u}>{v}') for u in s2[:3] for v in [t for t in s3 if t != u][:3]]}))
+                          bets={BET_2T: [('2車単', f'{hd}>{u}', pr * q2[u]) for u in s2[:3]],
+                                BET_3T: [('3連単', f'{hd}>{u}>{v}', pr * q2[u] * q3[v] / max(1 - q3[u], 1e-6))
+                                         for u in s2[:3] for v in [t for t in s3 if t != u][:3]]}))
     return y[['race_id', 'car_no', 'pr']], picks

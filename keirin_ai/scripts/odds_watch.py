@@ -23,6 +23,7 @@ from keirin.sources.http import PoliteFetcher  # noqa: E402
 from keirin.line_combos import line_combo_probs  # noqa: E402
 from keirin.market_model import apply_model, market_table, one_bet  # noqa: E402
 from keirin.ana import ANA_NAME, GYOKUSAI_NAME, ana_pick, gyokusai_bets  # noqa: E402
+from keirin.head import BET_3T, BET_3T_EV, EV_MIN  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
@@ -152,6 +153,28 @@ def decide_ana(db: DB, race: dict, tri: dict, exacta: dict | None, ts: str) -> i
     return n
 
 
+def decide_head(db: DB, race: dict, tri: dict, ts: str) -> int:
+    """頭AI v1＋相手AI展開型v1: 朝に記録した3連単9点のうち、見込み確率×8分前オッズ が EV_MIN を超える目だけを記録する。"""
+    if db.con.execute("SELECT 1 FROM bets WHERE mode='live' AND race_id=? AND strategy=?", (race["race_id"], BET_3T_EV)).fetchone():
+        return 0
+    rows = db.con.execute("SELECT combo, prob FROM bets WHERE mode='live' AND race_id=? AND strategy=?",
+                          (race["race_id"], BET_3T)).fetchall()
+    n, keep = 0, []
+    for combo, prob in rows:
+        o = tri.get(combo)
+        if not o or prob is None or prob * o <= EV_MIN:
+            continue
+        n += db.con.execute("""INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,
+               odds_final, ev, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               ("live", race["race_id"], race["date"], BET_3T_EV, "3連単", combo, 100, prob, o, 0, prob * o, ts)).rowcount
+        keep.append(f"{combo}@{o}")
+    db.commit()
+    if rows:
+        print(f"頭AI|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|"
+              f"{'買い ' + ' '.join(keep) if keep else 'EV1.2超なし'}", flush=True)
+    return n
+
+
 def backfill_one(db: DB, f) -> bool:
     """空き時間に、過去レースの3連単の確定オッズを1レース分だけ取る（新しい順、6/11以降、まだ無いもの）。"""
     r = db.con.execute("""SELECT race_id, date, venue, race_no FROM races r WHERE has_result=1 AND date>='2026-06-11'
@@ -259,6 +282,7 @@ def main(limit: float = 7000):
                                     db.commit()
                                     if m == DECIDE_MARK and not ti["final"]:
                                         decide_ana(db, r, ti["odds"]["3連単"], info["odds"].get("2車単"), tts)
+                                        decide_head(db, r, ti["odds"]["3連単"], tts)
                             except Exception as e:  # noqa: BLE001
                                 print("3連単失敗", r["race_id"], str(e)[:80], flush=True)
                         if m == DECIDE_MARK and not info["final"]:
