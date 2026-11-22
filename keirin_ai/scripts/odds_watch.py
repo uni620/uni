@@ -236,6 +236,7 @@ def main(limit: float = 7000):
     done: set[tuple[str, int]] = set()
     ok = bad = 0
     while time.time() - t0 < limit:
+        db.commit()                              # 開いたままの読み取りを閉じ、朝に入った出走表が見えるようにする
         now = datetime.now()
         races = db.df("SELECT race_id,date,venue,race_no,start_time FROM races WHERE date=? AND start_time IS NOT NULL",
                       (today,)).to_dict("records")
