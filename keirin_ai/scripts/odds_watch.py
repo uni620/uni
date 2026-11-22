@@ -34,7 +34,9 @@ RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
          ("オッズ+ライン1点・EV1.1", "odds_line_v1.pkl", True, 1.1, 30),
          ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2, 30),
          ("オッズ1点・10倍以下EV1.1", "odds_only_v1.pkl", False, 1.1, 10),   # 11/20 追加: 的中が多くブレが小さい
-         ("ver1（オッズ1点・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10)]   # 11/22 ver1 として固定（検証で一番高かった）
+         ("ver1（オッズ1点・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10),   # 11/22 ver1 として固定（検証で一番高かった）
+         ("ver1b（ワイドなし・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10)]  # 11/22 ユーザー指示: ワイドを買わない版（通知はこれ）
+NO_WIDE = {"ver1b（ワイドなし・10倍以下EV1.2）"}
 _MODELS: dict = {}
 
 
@@ -78,11 +80,13 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         if tab is None:
             return n
         scored = apply_model(tab, _MODELS[mfile])
+        if name in NO_WIDE:
+            scored = scored[scored["bt"] != "ワイド"]
         b = one_bet(scored, th, mx)
-        if name.startswith("ver1"):              # ver1 の結果は買い・見送りとも1行で残す（通知用）
+        if name.startswith("ver1"):              # ver1・ver1b の結果は買い・見送りとも1行で残す（通知用）
             c1 = one_bet(scored, -1, mx)
             if c1 is not None:
-                print(f"ver1|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|"
+                print(f"{name.split('（')[0]}|{race.get('venue')}{race.get('race_no')}R {race.get('start_time')}発走|"
                       f"{'買い' if b is not None else 'なし'}|{c1['bt']}{c1['combo']}|{c1['odds']}|{c1['ev']:.2f}|{c1['pm']:.5f}",
                       flush=True)
         if b is None:
