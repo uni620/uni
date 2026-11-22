@@ -35,8 +35,12 @@ RULES = [("オッズ1点・EV1.1", "odds_only_v1.pkl", False, 1.1, 30),
          ("オッズ+ライン1点・EV1.2", "odds_line_v1.pkl", True, 1.2, 30),
          ("オッズ1点・10倍以下EV1.1", "odds_only_v1.pkl", False, 1.1, 10),   # 11/20 追加: 的中が多くブレが小さい
          ("ver1（オッズ1点・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10),   # 11/22 ver1 として固定（検証で一番高かった）
-         ("ver1b（ワイドなし・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10)]  # 11/22 ユーザー指示: ワイドを買わない版（通知はこれ）
-NO_WIDE = {"ver1b（ワイドなし・10倍以下EV1.2）"}
+         ("ver1b（ワイドなし・10倍以下EV1.2）", "odds_only_v1.pkl", False, 1.2, 10),  # 11/22 ユーザー指示: ワイドを買わない版
+         ("ver1c（ワイドなし・確定見込みEV1.2）", "odds_only_v1.pkl", False, 1.2, 10)]  # 11/22: 確定までの下がり方を見込む（通知はこれ）
+NO_WIDE = {"ver1b（ワイドなし・10倍以下EV1.2）", "ver1c（ワイドなし・確定見込みEV1.2）"}
+# 8分前→確定のオッズの下がり方（実際に買った目の中央値、11/20〜22の64レース。2車単・3連複は2車複と同じと仮定）。データが増えたら見直す
+DRIFT = {"2車複": 0.79, "2車単": 0.79, "3連複": 0.79, "ワイド": 0.68}
+DRIFT_RULES = {"ver1c（ワイドなし・確定見込みEV1.2）"}
 _MODELS: dict = {}
 
 
@@ -82,6 +86,11 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
         scored = apply_model(tab, _MODELS[mfile])
         if name in NO_WIDE:
             scored = scored[scored["bt"] != "ワイド"]
+        if name in DRIFT_RULES:                  # 確定時のオッズを見込んだ期待値（確率×オッズ×下がり方）
+            scored = scored.copy()
+            f = scored["bt"].map(DRIFT).fillna(0.79)
+            scored["pm"] = scored["pm"] * f      # ボーダー = 基準 / pm がそのまま「8分前のオッズで何倍以上なら買い」になる
+            scored["ev"] = scored["pm"] * scored["odds"]
         b = one_bet(scored, th, mx)
         if name.startswith("ver1"):              # ver1・ver1b の結果は買い・見送りとも1行で残す（通知用）
             c1 = one_bet(scored, -1, mx)
