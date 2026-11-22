@@ -39,7 +39,10 @@ _MODELS: dict = {}
 
 
 def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
-    """締切前オッズで、1レース1点のルールの仮想購入を記録する。欠車があるレースは記録しない（学習と同じ条件）。"""
+    """締切前オッズで、1レース1点のルールの仮想購入を記録する。欠車があるレースは記録しない（学習と同じ条件）。
+    ガールズは記録しない（ver1 などのルールはガールズ以外のレースで決めたため。オッズだけは記録する）。"""
+    if "ガールズ" in str(race.get("race_class") or db.con.execute("SELECT race_class FROM races WHERE race_id=?", (race["race_id"],)).fetchone()[0]):
+        return 0
     ent = db.df("SELECT car_no, scratched, line_id, line_pos, line_size FROM entries WHERE race_id=?", (race["race_id"],))
     if ent.empty or (ent["scratched"] == 1).any():
         return 0
@@ -98,7 +101,9 @@ def decide(db: DB, race: dict, odds: dict, ts: str) -> int:
     return n
 
 def decide_ana(db: DB, race: dict, tri: dict, exacta: dict | None, ts: str) -> int:
-    """穴の系統（keirin/ana.py）の仮想購入。8分前の3連単（と2車単）のオッズで決める。欠車レースは記録しない。"""
+    """穴の系統（keirin/ana.py）の仮想購入。8分前の3連単（と2車単）のオッズで決める。欠車レースとガールズは記録しない。"""
+    if "ガールズ" in str(db.con.execute("SELECT race_class FROM races WHERE race_id=?", (race["race_id"],)).fetchone()[0]):
+        return 0
     ent = db.df("SELECT car_no, rider_id, score, line_id, line_pos, line_size, scratched FROM entries WHERE race_id=?",
                 (race["race_id"],))
     if ent.empty or (ent["scratched"] == 1).any():

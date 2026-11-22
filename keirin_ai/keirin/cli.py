@@ -159,7 +159,7 @@ def cmd_fetch(cfg, args):
         done = {r[0] for r in db.con.execute("SELECT race_id FROM races WHERE date=? AND has_result=1", (ds,))}
         n = 0
         for race in races:
-            if race["race_id"] in done or race.get("race_class") == "ガールズ":
+            if race["race_id"] in done:
                 continue
             try:
                 n += pipeline.ingest_result(db, src, race)

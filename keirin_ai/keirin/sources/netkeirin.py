@@ -1,7 +1,7 @@
 """netkeirin（keirin.netkeiba.com）からデータを取る部品。
 
 1日あたり : レース一覧 1ページ（その日の全レースID・場名・大会グレード）
-1レースあたり: 出走表 / 並び予想 / 結果・払戻 の3ページ（ガールズは出走表だけで打ち切り）
+1レースあたり: 出走表 / 並び予想 / 結果・払戻 の3ページ（2026-11-22 からガールズも全部取る。skip_girls=true で以前の動き）
 
 マナーと利用規約（2026-11 時点で確認）
 - robots.txt は全ページ許可。それでも 1回ごとに request_interval_sec 秒（初期値3秒）あける
@@ -303,7 +303,7 @@ def parse_result(html: str, race_id: str) -> RaceResult | None:
 class NetkeirinSource(Source):
     name = "netkeirin"
 
-    def __init__(self, fetcher: PoliteFetcher, skip_girls: bool = True):
+    def __init__(self, fetcher: PoliteFetcher, skip_girls: bool = False):
         self.f = fetcher
         self.skip_girls = skip_girls
         self._venues: dict[str, dict] = {}
@@ -343,8 +343,10 @@ class NetkeirinSource(Source):
         v = self._venues.get(rid[8:10], {})
         race["venue"] = v.get("venue") or race["venue"]
         race["grade"] = race["grade"] or v.get("grade")
-        if race["race_class"] == "ガールズ" and self.skip_girls:
-            return RaceCard(race, [])          # ガールズは対象外（レース情報だけ残す）
+        if race["race_class"] == "ガールズ":
+            if self.skip_girls:
+                return RaceCard(race, [])      # 以前の動き: レース情報だけ残す
+            return RaceCard(race, rows)        # ガールズはラインが無い（全員単騎）ので並び予想は取らない
         lines = parse_narabi(self.f.get(f"{BASE}/race/api_get_narabi_yoso.html?input=UTF-8&output=html"
                                         f"&race_id={rid}", use_cache=past))
         apply_narabi(rows, lines)
