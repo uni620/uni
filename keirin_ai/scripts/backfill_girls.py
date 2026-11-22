@@ -9,7 +9,7 @@ from keirin.db import DB  # noqa: E402
 from keirin.sources import make_source  # noqa: E402
 from keirin import pipeline  # noqa: E402
 logging.basicConfig(level=logging.WARNING)
-cfg = load_config(str(ROOT / "config.toml")); db = DB(cfg.path("db")); src = make_source(cfg)
+cfg = load_config(str(ROOT / (sys.argv[1] if len(sys.argv) > 1 else "config.toml"))); db = DB(cfg.path("db")); src = make_source(cfg)
 races = db.df("""SELECT * FROM races WHERE race_class LIKE '%ガールズ%' AND has_result=0 AND date < date('now','localtime')
                  ORDER BY date DESC""").to_dict("records")
 print("対象", len(races), flush=True)
