@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from keirin.db import DB  # noqa: E402
-from keirin.head import HEAD_NAME, predict  # noqa: E402
+from keirin.head import BET_WIDE, HEAD_NAME, predict  # noqa: E402
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
 dry = '--dry' in sys.argv
 day = args[0] if args else date.today().isoformat()
@@ -27,7 +27,14 @@ for p in sorted(picks, key=lambda p: info.get(p['race_id'], ('', 0, ''))[2] or '
     scratched = db.con.execute("SELECT 1 FROM entries WHERE race_id=? AND scratched=1", (p['race_id'],)).fetchone()
     if scratched:
         continue
+    venue = info.get(p['race_id'], ('',))[0]
+    final_day = db.con.execute("SELECT 1 FROM races WHERE date=? AND venue=? AND race_name LIKE '%決勝%'", (day, venue)).fetchone()
+    grade = (db.con.execute("SELECT grade FROM races WHERE race_id=?", (p['race_id'],)).fetchone()[0] or '').upper()
+    n_cars = db.con.execute("SELECT COUNT(*) FROM entries WHERE race_id=?", (p['race_id'],)).fetchone()[0]
+    skip_wide = bool(final_day) or 'G' in grade or n_cars >= 9
     for strat, bets in p['bets'].items():
+        if strat == BET_WIDE and skip_wide:
+            continue
         for bt, combo, prob in bets:
             cur = db.con.execute(
                 """INSERT OR IGNORE INTO bets (mode, race_id, date, strategy, bet_type, combo, stake, prob, odds,

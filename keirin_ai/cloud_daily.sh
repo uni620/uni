@@ -13,3 +13,4 @@ python3 -m keirin predict --all
 python3 -m keirin report
 python3 scripts/tenkai_daily.py "$(date +%F)"
 python3 scripts/head_daily.py "$(date +%F)"
+python3 scripts/girls_daily.py "$(date +%F)"

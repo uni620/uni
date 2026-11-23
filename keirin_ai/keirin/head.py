@@ -10,6 +10,8 @@
   2車単3点 = 頭 → 2着候補上位3人 / 3連単9点 = 頭 → 2着候補上位3人 → 3着候補上位3人（2着と同じ選手は除く）
 検証（2026-04〜11、各月その月より前だけで学習）: 自信60%以上 1,270R で頭の的中 約78%、
   2車単3点 的中66.8%・回収率75%、3連単9点 的中56.4%・回収率80%。回収率は100%未満（的中を優先した形）。
+  ワイド3点（頭-2着候補上位3人、2026-11-23 追加・的中特化）: 最終日（決勝のある日）・G3以上・9車立ては記録しない。
+  検証（9〜11月）: 自信60〜70% 的中92%、70%以上 96%（回収率 約80%）。
   さらに締切8分前に、3連単9点のうち 見込み確率×8分前オッズ が EV_MIN を超える目だけを別に記録する（BET_3T_EV）。
 """
 from __future__ import annotations
@@ -24,6 +26,7 @@ from keirin.tenkai import A as TENKAI_A, P as TENKAI_P, QUERY, features, stage2_
 HEAD_NAME = "頭AI v1"
 BET_2T = "頭AI v1＋相手AI展開型v1・2車単3点（自信60%以上）"
 BET_3T = "頭AI v1＋相手AI展開型v1・3連単9点（自信60%以上）"
+BET_WIDE = "頭AI v1＋相手AI展開型v1・ワイド3点（自信60%以上・最終日/G3以上/9車を除く）"
 BET_3T_EV = "頭AI v1＋相手AI展開型v1・3連単9点のうち8分前EV1.2超"
 EV_MIN = 1.2   # 8分前の3連単オッズ×見込み確率 がこれを超える目だけ残す（2026-11-22 決定。確定オッズでの検証は EV1.2以上で回収率96%・95%幅62〜138%）
 MIN_CONF = 0.6
@@ -260,5 +263,6 @@ def predict(con, today: str) -> tuple[pd.DataFrame, list[dict]]:
         picks.append(dict(race_id=rid, head=hd, conf=float(h.pr), b=b1, sec=s2[:3],
                           bets={BET_2T: [('2車単', f'{hd}>{u}', pr * q2[u]) for u in s2[:3]],
                                 BET_3T: [('3連単', f'{hd}>{u}>{v}', pr * q2[u] * q3[v] / max(1 - q3[u], 1e-6))
-                                         for u in s2[:3] for v in [t for t in s3 if t != u][:3]]}))
+                                         for u in s2[:3] for v in [t for t in s3 if t != u][:3]],
+                                BET_WIDE: [('ワイド', '-'.join(map(str, sorted((hd, u)))), pr) for u in s2[:3]]}))
     return y[['race_id', 'car_no', 'pr']], picks
