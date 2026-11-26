@@ -31,6 +31,16 @@ def _id(href: str | None, kind: str) -> str | None:
     return m.group(1) if m else None
 
 
+def parse_course(cond: str) -> dict:
+    """「芝右 外1600m」「ダ左1400m」「障芝 ダート2970m」「芝右 内2周3600m」→ surface（芝/ダ/障）・direction・distance。"""
+    head = cond.split("/")[0]
+    m = re.match(r"\s*(障|芝|ダ)", head)
+    d = re.search(r"(\d+)m", head)
+    r = re.search(r"(右|左|直線)", head)
+    return {"surface": m.group(1) if m else None, "direction": r.group(1) if r else None,
+            "distance": int(d.group(1)) if d else None}
+
+
 def parse_race(html: str, race_id: str) -> dict:
     """db.netkeiba.com/race/<id>/ → {race, results, payouts, corners, laps}。読めるものは全部入れる。"""
     s = BeautifulSoup(html, "html.parser")
@@ -43,9 +53,7 @@ def parse_race(html: str, race_id: str) -> dict:
         span = intro.find("diary_snap_cut") or intro.find("span")
         cond = _text(span)
         race["condition_text"] = cond
-        m = re.search(r"(芝|ダ|障)(右|左|直線)?\s*(?:外|内|外-内|内-外|２周)?\s*(\d+)m", cond)
-        if m:
-            race["surface"], race["direction"], race["distance"] = m.group(1), m.group(2), int(m.group(3))
+        race.update(parse_course(cond))
         for key, pat in (("weather", r"天候\s*:\s*(\S+)"), ("going", r"(?:芝|ダート)\s*:\s*(\S+)"), ("start_time", r"発走\s*:\s*(\d{1,2}:\d{2})")):
             m = re.search(pat, cond)
             race[key] = m.group(1) if m else None
